@@ -1,0 +1,164 @@
+package application
+
+import (
+	"context"
+	"time"
+
+	"mygo/internal/domain/gomoku"
+	"mygo/internal/scheduler"
+)
+
+// Claim is a lease with the state the worker needs to decide the turn.
+type Claim struct {
+	ClaimID   string         `json:"claim_id"`
+	TurnID    string         `json:"turn_id"`
+	ExpiresAt time.Time      `json:"expires_at"`
+	GameID    string         `json:"game_id"`
+	Version   int            `json:"version"`
+	Player    int            `json:"player"`
+	Board     [][]int        `json:"board"`
+	History   []gomoku.Move  `json:"history"`
+	LastMove  *gomoku.Move   `json:"last_move"`
+	Config    map[string]any `json:"config"`
+}
+
+// ClaimService owns the AI turn claiming use cases.
+type ClaimService struct {
+	coord *Coordinator
+	ttl   time.Duration
+}
+
+// ClaimServiceOption configures a claim service.
+type ClaimServiceOption func(*ClaimService)
+
+// LeaseTTL sets the lifetime of a fresh lease.
+func LeaseTTL(ttl time.Duration) ClaimServiceOption {
+	return func(s *ClaimService) { s.ttl = ttl }
+}
+
+// NewClaimService builds a claim service.
+func NewClaimService(coord *Coordinator, options ...ClaimServiceOption) *ClaimService {
+	service := &ClaimService{coord: coord, ttl: scheduler.DefaultLeaseSeconds * time.Second}
+	for _, option := range options {
+		option(service)
+	}
+	return service
+}
+
+// Claim waits for a turn of the given engine and leases it. It reports false
+// when the wait window ended without a task.
+func (s *ClaimService) Claim(ctx context.Context, engineID, workerID string, wait time.Duration) (*Claim, bool, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		claim, ok, err := s.tryClaim(engineID, workerID)
+		if err != nil {
+			return nil, false, err
+		}
+		if ok {
+			return claim, true, nil
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, false, nil
+		}
+		if err := s.wait(ctx, remaining); err != nil {
+			return nil, false, err
+		}
+	}
+}
+
+// tryClaim looks for a pending turn of the engine and leases it.
+func (s *ClaimService) tryClaim(engineID, workerID string) (*Claim, bool, error) {
+	s.coord.Lock()
+	defer s.coord.Unlock()
+
+	for _, game := range s.coord.Games().List() {
+		if game.Status != gomoku.StatusPlaying || game.Execution != gomoku.ExecutionRunning {
+			continue
+		}
+		side := game.ConfigFor(game.Current)
+		if !side.IsAI() || side.EngineName() != engineID {
+			continue
+		}
+		turnID := scheduler.TurnID(game.ID, game.Version)
+		if s.coord.Leases().ActiveFor(game.ID, game.Version) {
+			continue
+		}
+		lease, ok := s.coord.Leases().TryAcquire(turnID, game.ID, engineID, workerID, game.Version, int(game.Current), s.ttl)
+		if !ok {
+			continue
+		}
+		return &Claim{
+			ClaimID:   lease.ClaimID,
+			TurnID:    lease.TurnID,
+			ExpiresAt: lease.ExpiresAt.UTC(),
+			GameID:    game.ID,
+			Version:   game.Version,
+			Player:    int(game.Current),
+			Board:     game.Board.Cells(),
+			History:   game.History(),
+			LastMove:  game.LastMove,
+			Config:    side.Config,
+		}, true, nil
+	}
+	return nil, false, nil
+}
+
+// wait blocks until the coordinator signals a change, the context is done or
+// the remaining time is over. It never holds the coordinator lock.
+func (s *ClaimService) wait(ctx context.Context, remaining time.Duration) error {
+	s.coord.Lock()
+	signal := s.coord.WaitChannel()
+	s.coord.Unlock()
+
+	timer := time.NewTimer(remaining)
+	defer timer.Stop()
+	select {
+	case <-signal:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// Renew extends the lease of a claim.
+func (s *ClaimService) Renew(claimID, engineID string, extendSeconds int) (*scheduler.Lease, error) {
+	s.coord.Lock()
+	defer s.coord.Unlock()
+	lease, err := s.coord.Leases().Renew(claimID, engineID, extendSeconds)
+	if err != nil {
+		return nil, mapLeaseError(err)
+	}
+	return lease, nil
+}
+
+// Release drops the lease of a claim.
+func (s *ClaimService) Release(claimID, engineID string) error {
+	s.coord.Lock()
+	defer s.coord.Unlock()
+	if err := s.coord.Leases().Release(claimID, engineID); err != nil {
+		return mapLeaseError(err)
+	}
+	s.coord.Signal()
+	return nil
+}
+
+// mapLeaseError maps a lease error to an application error.
+func mapLeaseError(err error) error {
+	switch err {
+	case scheduler.ErrClaimNotFound:
+		return newError(CodeClaimNotFound, "任务租约不存在")
+	case scheduler.ErrClaimExpired:
+		return newError(CodeClaimExpired, "任务租约已过期")
+	case scheduler.ErrClaimInvalid:
+		return newError(CodeClaimInvalid, "任务租约无效")
+	case scheduler.ErrForbidden:
+		return newError(CodeForbidden, "无权操作该任务租约")
+	case scheduler.ErrLeaseTooLong:
+		return newError(CodeClaimInvalid, "任务租约总时长已达上限")
+	default:
+		return newErrorf(CodeInternalError, "租约操作失败: %v", err)
+	}
+}
