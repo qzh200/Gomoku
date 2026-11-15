@@ -3,6 +3,7 @@ package application
 import (
 	"sync"
 
+	"mygo/internal/domain/gomoku"
 	"mygo/internal/repository"
 	"mygo/internal/scheduler"
 )
@@ -53,3 +54,27 @@ func (c *Coordinator) Signal() {
 // WaitChannel returns the channel that is closed on the next signal. It must
 // be called with the lock held.
 func (c *Coordinator) WaitChannel() <-chan struct{} { return c.notify }
+
+// pendingTurns lists the turns that the engine may take: the games that are
+// running, not paused and whose current side is that engine. The caller must
+// hold the lock.
+func (c *Coordinator) pendingTurns(engineID string) []scheduler.Turn {
+	var turns []scheduler.Turn
+	for _, game := range c.games.List() {
+		if game.Status != gomoku.StatusPlaying || game.Execution != gomoku.ExecutionRunning {
+			continue
+		}
+		side := game.ConfigFor(game.Current)
+		if !side.IsAI() || side.EngineName() != engineID {
+			continue
+		}
+		turns = append(turns, scheduler.Turn{
+			GameID:   game.ID,
+			Version:  game.Version,
+			Player:   int(game.Current),
+			EngineID: engineID,
+			Config:   side.Config,
+		})
+	}
+	return turns
+}

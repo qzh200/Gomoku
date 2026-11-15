@@ -18,7 +18,7 @@ MyGo 是本地桌面五子棋平台，由一个 Go 进程承担三个角色：
         │      ▼                                                                │
         │  application/  ──用例编排──▶  domain/gomoku（规则）                   │
         │      │              ──读写──▶ repository/（棋局存储）                   │
-        │      │              ──租约──▶ scheduler/（租约注册表）                  │
+        │      │              ──租约──▶ scheduler/（任务队列与租约）              │
         │      ▼                                                                │
         │  transport/http  ──协议转换──▶ application/                            │
         │      ▲                                                                 │
@@ -34,7 +34,7 @@ MyGo 是本地桌面五子棋平台，由一个 Go 进程承担三个角色：
 
 * `domain/gomoku` 只含规则与领域状态，不 import 任何 http / repository / ui 包。
 * `application` 编排用例，不出现 HTTP 状态码，也不出现 JSON 结构。
-* `repository` 只抽象棋局读写；`scheduler` 只管理租约。
+* `repository` 只抽象棋局读写；`scheduler` 只管理待领取回合与租约。
 * `transport/http` 只做协议转换、输入校验、错误码映射。
 * `ui` 只读取 `application` 返回的快照并把用户动作转成应用服务调用；
   UI **不得**直接修改棋盘或规则引擎状态。
@@ -98,10 +98,15 @@ type GameRepository interface {
 
 ### 2.4 `scheduler`
 
+* `queue.go`：待领取回合的队列。`scheduler.TurnSource` 是一个函数类型，
+  `application` 用它把「哪些回合可以领取」的判断交给调度器，调度器只负责
+  原子领取，不认识棋局。
 * `lease.go`：租约注册表、原子领取、续期、释放、过期、频率限制。
-* 待领取回合的发现（当前行动方是 AI、引擎匹配、未暂停、无有效租约）在
-  `application/claim_service.go` 中完成，长轮询的广播通道在
-  `application/coordinator.go` 中提供：长轮询等待时不持有任何锁。
+
+回合的领取条件（棋局在进行中、当前行动方是 AI、引擎匹配、未暂停、无有效
+租约）由 `application/coordinator.go` 的 `pendingTurns` 判断，它在协调器锁内
+运行，因此领取是原子的。长轮询的广播通道同样在 `application/coordinator.go` 中
+提供：长轮询等待时不持有任何锁。
 
 租约模型：
 

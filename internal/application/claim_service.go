@@ -25,6 +25,7 @@ type Claim struct {
 // ClaimService owns the AI turn claiming use cases.
 type ClaimService struct {
 	coord *Coordinator
+	queue *scheduler.Queue
 	ttl   time.Duration
 }
 
@@ -42,6 +43,7 @@ func NewClaimService(coord *Coordinator, options ...ClaimServiceOption) *ClaimSe
 	for _, option := range options {
 		option(service)
 	}
+	service.queue = scheduler.NewQueue(coord.Leases(), coord.pendingTurns, service.ttl)
 	return service
 }
 
@@ -67,41 +69,33 @@ func (s *ClaimService) Claim(ctx context.Context, engineID, workerID string, wai
 	}
 }
 
-// tryClaim looks for a pending turn of the engine and leases it.
+// tryClaim asks the scheduler for the next turn of the engine and loads the
+// state of the game it belongs to.
 func (s *ClaimService) tryClaim(engineID, workerID string) (*Claim, bool, error) {
 	s.coord.Lock()
 	defer s.coord.Unlock()
 
-	for _, game := range s.coord.Games().List() {
-		if game.Status != gomoku.StatusPlaying || game.Execution != gomoku.ExecutionRunning {
-			continue
-		}
-		side := game.ConfigFor(game.Current)
-		if !side.IsAI() || side.EngineName() != engineID {
-			continue
-		}
-		turnID := scheduler.TurnID(game.ID, game.Version)
-		if s.coord.Leases().ActiveFor(game.ID, game.Version) {
-			continue
-		}
-		lease, ok := s.coord.Leases().TryAcquire(turnID, game.ID, engineID, workerID, game.Version, int(game.Current), s.ttl)
-		if !ok {
-			continue
-		}
-		return &Claim{
-			ClaimID:   lease.ClaimID,
-			TurnID:    lease.TurnID,
-			ExpiresAt: lease.ExpiresAt.UTC(),
-			GameID:    game.ID,
-			Version:   game.Version,
-			Player:    int(game.Current),
-			Board:     game.Board.Cells(),
-			History:   game.History(),
-			LastMove:  game.LastMove,
-			Config:    side.Config,
-		}, true, nil
+	lease, turn, ok := s.queue.Next(engineID, workerID)
+	if !ok {
+		return nil, false, nil
 	}
-	return nil, false, nil
+	game, found := s.coord.Games().Get(turn.GameID)
+	if !found {
+		s.coord.Leases().InvalidateTurn(lease.TurnID)
+		return nil, false, nil
+	}
+	return &Claim{
+		ClaimID:   lease.ClaimID,
+		TurnID:    lease.TurnID,
+		ExpiresAt: lease.ExpiresAt.UTC(),
+		GameID:    game.ID,
+		Version:   game.Version,
+		Player:    int(game.Current),
+		Board:     game.Board.Cells(),
+		History:   game.History(),
+		LastMove:  game.LastMove,
+		Config:    turn.Config,
+	}, true, nil
 }
 
 // wait blocks until the coordinator signals a change, the context is done or
