@@ -1,0 +1,935 @@
+openapi: 3.1.0
+info:
+  title: MyGo Gomoku API
+  version: "1.0.0"
+  description: |
+    MyGo 五子棋平台的冻结 v1 契约。
+
+    MyGo 是唯一的权威棋局状态管理者。UI 通过应用服务访问棋局，Python AI 通过本 API
+    访问棋局，两者共享同一套业务规则。
+
+    认证：
+    * `Authorization: Bearer <engine_token>` — AI Worker 身份。服务端根据令牌解析出
+      `engine_id`，**不信任** 请求体中的引擎名称。
+    * `X-Game-Owner-Token: <owner_token>` — 棋局 Owner 身份，只能操作自己创建的棋局。
+    * `X-Local-Client-Token: <local_client_token>` — 本地界面身份，用于创建棋局、
+      列出棋局等跨棋局操作。MyGo 启动时在控制台打印该令牌。
+    * Engine Token、Owner Token 与 Local Client Token 互不通用；缺失或越权一律
+      返回 `401` / `403`。
+
+    幂等：所有写操作（`POST /games`、`POST /games/{id}/moves`）要求
+    `Idempotency-Key` 请求头。键按「调用者 + 接口」作用域去重：相同键 + 相同请求体
+    重试返回已保存的结果；相同键 + 不同请求体返回 `409 IDEMPOTENCY_KEY_REUSED`。
+
+servers:
+  - url: http://127.0.0.1:8080/api/v1
+    description: 本地桌面实例（默认只监听 127.0.0.1）
+
+tags:
+  - name: games
+    description: 棋局生命周期
+  - name: moves
+    description: 落子
+  - name: engines
+    description: AI 引擎注册表
+  - name: claims
+    description: AI 回合任务与租约
+
+paths:
+  /games:
+    post:
+      tags: [games]
+      summary: 创建棋局
+      description: |
+        创建一个新的棋局。重新开局必须调用本接口以获得新的 `game_id`。
+        `owner_token` 只在本次响应中返回一次，之后无法通过任何接口再次获取。
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGameRequest"
+            examples:
+              humanVsAi:
+                summary: Human vs AI
+                value:
+                  mode: human_vs_ai
+                  players:
+                    black:
+                      type: human
+                    white:
+                      type: ai
+                      engine_id: classical
+                      config:
+                        depth: 3
+              aiVsAi:
+                summary: AI vs AI
+                value:
+                  mode: ai_vs_ai
+                  players:
+                    black:
+                      type: ai
+                      engine_id: classical
+                      config:
+                        depth: 3
+                    white:
+                      type: ai
+                      engine_id: llm
+                      config: {}
+              humanVsHuman:
+                summary: Human vs Human
+                value:
+                  mode: human_vs_human
+                  players:
+                    black:
+                      type: human
+                    white:
+                      type: human
+      responses:
+        "201":
+          description: 棋局已创建
+          headers:
+            Idempotency-Key:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [game, owner_token]
+                properties:
+                  game:
+                    $ref: "#/components/schemas/Game"
+                  owner_token:
+                    type: string
+                    description: 棋局 Owner Token，仅本次返回。
+              examples:
+                created:
+                  value:
+                    game:
+                      id: game_001
+                      mode: human_vs_ai
+                      players:
+                        black:
+                          type: human
+                          engine_id: null
+                          config: {}
+                        white:
+                          type: ai
+                          engine_id: classical
+                          config:
+                            depth: 3
+                      board: []
+                      current_player: 1
+                      status: playing
+                      result: ongoing
+                      winner: null
+                      last_move: null
+                      move_count: 0
+                      version: 0
+                      execution_state: running
+                      ai_thinking: false
+                    owner_token: generated-game-owner-token
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/InvalidGameConfig"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      tags: [games]
+      summary: 查询棋局列表
+      description: 返回全部棋局的完整快照，按创建顺序升序排列。
+      responses:
+        "200":
+          description: 棋局列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Game"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /games/{id}:
+    parameters:
+      - $ref: "#/components/parameters/GameId"
+    get:
+      tags: [games]
+      summary: 获取完整棋局
+      responses:
+        "200":
+          description: 完整棋局快照
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "404":
+          $ref: "#/components/responses/GameNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    patch:
+      tags: [games]
+      summary: 暂停或恢复 AI 自动对战
+      description: |
+        仅 `ai_vs_ai` 模式支持手动暂停与恢复；其他模式返回 `422 INVALID_GAME_CONFIG`。
+
+        暂停会阻止新的任务领取，并使当前尚未完成的 AI 租约立即失效。
+        恢复会重新开放当前回合的任务领取。
+
+        暂停与恢复**不修改棋盘版本**，`version` 不变。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [execution_state]
+              properties:
+                execution_state:
+                  type: string
+                  enum: [paused, running]
+                expected_version:
+                  type: integer
+                  minimum: 0
+                  description: 可选。不填则不做版本校验。
+      responses:
+        "200":
+          description: 更新后的棋局快照
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/GameNotFound"
+        "409":
+          $ref: "#/components/responses/VersionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidGameConfig"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [games]
+      summary: 删除棋局
+      description: 删除棋局并使其所有未完成租约失效。
+      responses:
+        "204":
+          description: 棋局已删除
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/GameNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /games/{id}/moves:
+    parameters:
+      - $ref: "#/components/parameters/GameId"
+    get:
+      tags: [moves]
+      summary: 查询落子历史
+      responses:
+        "200":
+          description: 落子历史，按实际落子顺序排列
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Move"
+              examples:
+                history:
+                  value:
+                    items:
+                      - row: 7
+                        col: 7
+                        player: 1
+                        number: 1
+                      - row: 7
+                        col: 8
+                        player: 2
+                        number: 2
+        "404":
+          $ref: "#/components/responses/GameNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [moves]
+      summary: 统一提交落子
+      description: |
+        人类玩家与 AI 玩家使用**同一套**落子规则，仅身份校验不同。
+
+        服务端依次校验：身份 → 回合 → 落点 → 版本 → 游戏状态 → AI 租约。
+
+        * 人类玩家：`X-Game-Owner-Token` 必须属于该棋局；该回合的当前行动方必须是人类。
+        * AI 玩家：`Authorization: Bearer <engine_token>` 对应的引擎必须是该回合的 AI；
+          且必须携带本轮有效的 `claim_id`。
+
+        成功落子后 `version` 加 1。
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitMoveRequest"
+            examples:
+              human:
+                summary: 人类落子
+                value:
+                  row: 7
+                  col: 8
+                  expected_version: 12
+              ai:
+                summary: AI 落子
+                value:
+                  row: 7
+                  col: 8
+                  expected_version: 12
+                  claim_id: claim_abc123
+      responses:
+        "201":
+          description: 落子成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [move, game]
+                properties:
+                  move:
+                    $ref: "#/components/schemas/Move"
+                  game:
+                    $ref: "#/components/schemas/Game"
+              examples:
+                accepted:
+                  value:
+                    move:
+                      row: 7
+                      col: 8
+                      player: 1
+                      number: 13
+                    game:
+                      id: game_001
+                      mode: human_vs_ai
+                      players:
+                        black:
+                          type: human
+                          engine_id: null
+                          config: {}
+                        white:
+                          type: ai
+                          engine_id: classical
+                          config:
+                            depth: 3
+                      board: []
+                      current_player: 2
+                      status: playing
+                      result: ongoing
+                      winner: null
+                      last_move:
+                        row: 7
+                        col: 8
+                        player: 1
+                        number: 13
+                      move_count: 13
+                      version: 13
+                      execution_state: running
+                      ai_thinking: false
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/GameNotFound"
+        "409":
+          description: |
+            冲突。`error.code` 取值：`VERSION_CONFLICT`、`POSITION_OCCUPIED`、
+            `GAME_FINISHED`、`GAME_PAUSED`、`CLAIM_EXPIRED`、`CLAIM_INVALID`、
+            `IDEMPOTENCY_KEY_REUSED`。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                versionConflict:
+                  value:
+                    error:
+                      code: VERSION_CONFLICT
+                      message: 棋局版本已经变化
+                claimExpired:
+                  value:
+                    error:
+                      code: CLAIM_EXPIRED
+                      message: 任务租约已过期
+        "422":
+          description: "`POSITION_OUT_OF_RANGE` 或 `INVALID_GAME_CONFIG`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /engines:
+    get:
+      tags: [engines]
+      summary: 获取可选择的 AI 引擎
+      description: |
+        返回引擎注册表。`engine_id` 是稳定标识，游戏规则代码不依赖具体字符串；
+        新增引擎只需修改注册配置。
+      responses:
+        "200":
+          description: 引擎列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Engine"
+              examples:
+                engines:
+                  value:
+                    items:
+                      - engine_id: classical
+                        display_name: Classical AI
+                        available: true
+                        last_active_at: "2026-11-15T13:29:41Z"
+                      - engine_id: llm
+                        display_name: LLM AI
+                        available: true
+                        last_active_at: null
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /ai/turn-claims:
+    post:
+      tags: [claims]
+      summary: AI 长轮询并领取回合
+      description: |
+        Python AI 主动发起的长轮询。服务端根据 `Authorization: Bearer <engine_token>`
+        解析出 `engine_id`，请求体中的 `worker_id` 仅用于标识 Worker 实例。
+
+        领取条件（全部满足才分配）：
+
+        1. 棋局正在进行；
+        2. 当前行动方是 AI；
+        3. 该 AI 的 `engine_id` 与 Worker 凭据匹配；
+        4. 对局没有暂停；
+        5. 当前回合不存在有效租约；
+        6. 棋局没有被删除。
+
+        同一回合同时最多存在一个有效租约；多个 Worker 并发轮询时由原子操作保证
+        只有一个 Worker 成功领取。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worker_id]
+              properties:
+                worker_id:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                wait_seconds:
+                  type: integer
+                  minimum: 0
+                  maximum: 120
+                  default: 20
+      responses:
+        "201":
+          description: 已领取回合
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TurnClaim"
+              examples:
+                claimed:
+                  value:
+                    claim_id: claim_abc123
+                    turn_id: game_001:12
+                    expires_at: "2026-11-15T13:30:00Z"
+                    game_id: game_001
+                    version: 12
+                    player: 1
+                    board: []
+                    history: []
+                    last_move: null
+                    config:
+                      depth: 3
+        "204":
+          description: 等待窗口内没有可领取的回合（正常情况，不是错误）
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /ai/turn-claims/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ClaimId"
+    patch:
+      tags: [claims]
+      summary: 续期任务租约
+      description: |
+        仅租约所属 Worker 所代表的授权引擎可以续期。单次续期长度与累计租约时长
+        均有上限（见 `extend_seconds` 上限与 `MAX_LEASE_TOTAL_SECONDS`）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [extend_seconds]
+              properties:
+                extend_seconds:
+                  type: integer
+                  minimum: 1
+                  maximum: 300
+      responses:
+        "200":
+          description: 续期成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [claim_id, expires_at]
+                properties:
+                  claim_id:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ClaimNotFound"
+        "409":
+          description: "`CLAIM_EXPIRED` 或 `CLAIM_INVALID`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [claims]
+      summary: 主动释放任务租约
+      description: |
+        AI 无法完成计算时主动释放。释放后若棋局仍满足分配条件，该回合重新进入
+        待领取队列；同一回合的领取频率被限制，避免异常 Worker 无限占用 CPU
+        或产生大量 LLM 调用费用。
+      responses:
+        "204":
+          description: 租约已释放
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ClaimNotFound"
+        "409":
+          description: "`CLAIM_EXPIRED` 或 `CLAIM_INVALID`"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  parameters:
+    GameId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      example: game_001
+    ClaimId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      example: claim_abc123
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        调用者作用域内唯一的请求标识。相同键 + 相同请求体重试返回首次保存的结果；
+        相同键 + 不同请求体返回 `409 IDEMPOTENCY_KEY_REUSED`。
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+
+  schemas:
+    PlayerType:
+      type: string
+      enum: [human, ai]
+
+    GameMode:
+      type: string
+      enum: [ai_vs_ai, human_vs_ai, human_vs_human]
+
+    Player:
+      type: object
+      required: [type, engine_id, config]
+      properties:
+        type:
+          $ref: "#/components/schemas/PlayerType"
+        engine_id:
+          type: [string, "null"]
+          description: 人类玩家为 null；AI 玩家为引擎注册表中的稳定标识。
+        config:
+          type: object
+          description: 引擎私有配置，原样回传给 Worker（AI 玩家）。
+          additionalProperties: true
+
+    Board:
+      type: array
+      description: 完整的 15×15 二维数组。0 空位，1 黑棋，2 白棋。
+      minItems: 15
+      maxItems: 15
+      items:
+        type: array
+        minItems: 15
+        maxItems: 15
+        items:
+          type: integer
+          minimum: 0
+          maximum: 2
+
+    Move:
+      type: object
+      required: [row, col, player, number]
+      properties:
+        row:
+          type: integer
+          minimum: 0
+          maximum: 14
+        col:
+          type: integer
+          minimum: 0
+          maximum: 14
+        player:
+          type: integer
+          enum: [1, 2]
+          description: 1 黑棋，2 白棋。
+        number:
+          type: integer
+          minimum: 1
+          description: 第几手，从 1 开始。
+
+    Game:
+      type: object
+      required:
+        - id
+        - mode
+        - players
+        - board
+        - current_player
+        - status
+        - result
+        - winner
+        - last_move
+        - move_count
+        - version
+        - execution_state
+        - ai_thinking
+      properties:
+        id:
+          type: string
+        mode:
+          $ref: "#/components/schemas/GameMode"
+        players:
+          type: object
+          required: [black, white]
+          properties:
+            black:
+              $ref: "#/components/schemas/Player"
+            white:
+              $ref: "#/components/schemas/Player"
+        board:
+          $ref: "#/components/schemas/Board"
+        current_player:
+          type: integer
+          enum: [1, 2]
+        status:
+          type: string
+          enum: [playing, finished]
+        result:
+          type: string
+          enum: [ongoing, black_win, white_win, draw]
+        winner:
+          type: [integer, "null"]
+          enum: [1, 2, null]
+          description: 未获胜和平局时为 null。
+        last_move:
+          oneOf:
+            - $ref: "#/components/schemas/Move"
+            - type: "null"
+        move_count:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 0
+          description: 每成功落子一次加 1；暂停、恢复、任务领取不改变版本。
+        execution_state:
+          type: string
+          enum: [running, paused]
+        ai_thinking:
+          type: boolean
+          description: 当前存在有效 AI 决策任务租约时为 true，由 MyGo 计算。
+
+    CreateGameRequest:
+      type: object
+      required: [mode, players]
+      properties:
+        mode:
+          $ref: "#/components/schemas/GameMode"
+        players:
+          type: object
+          required: [black, white]
+          properties:
+            black:
+              $ref: "#/components/schemas/CreatePlayer"
+            white:
+              $ref: "#/components/schemas/CreatePlayer"
+
+    CreatePlayer:
+      type: object
+      required: [type]
+      properties:
+        type:
+          $ref: "#/components/schemas/PlayerType"
+        engine_id:
+          type: string
+          description: AI 玩家必填，必须存在于引擎注册表。
+        config:
+          type: object
+          additionalProperties: true
+
+    SubmitMoveRequest:
+      type: object
+      required: [row, col, expected_version]
+      properties:
+        row:
+          type: integer
+          minimum: 0
+          maximum: 14
+        col:
+          type: integer
+          minimum: 0
+          maximum: 14
+        expected_version:
+          type: integer
+          minimum: 0
+          description: 客户端看到的棋局版本；与服务端不一致返回 409 VERSION_CONFLICT。
+        claim_id:
+          type: string
+          description: AI 玩家必填，必须是本轮有效租约。
+
+    Engine:
+      type: object
+      required: [engine_id, display_name, available, last_active_at]
+      properties:
+        engine_id:
+          type: string
+        display_name:
+          type: string
+        available:
+          type: boolean
+        last_active_at:
+          type: [string, "null"]
+          format: date-time
+
+    TurnClaim:
+      type: object
+      required:
+        - claim_id
+        - turn_id
+        - expires_at
+        - game_id
+        - version
+        - player
+        - board
+        - history
+        - last_move
+        - config
+      properties:
+        claim_id:
+          type: string
+        turn_id:
+          type: string
+          description: 标识被领取的回合，格式为 <game_id>:<version>。
+        expires_at:
+          type: string
+          format: date-time
+          description: UTC ISO 8601。
+        game_id:
+          type: string
+        version:
+          type: integer
+          minimum: 0
+        player:
+          type: integer
+          enum: [1, 2]
+        board:
+          $ref: "#/components/schemas/Board"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/Move"
+        last_move:
+          oneOf:
+            - $ref: "#/components/schemas/Move"
+            - type: "null"
+        config:
+          type: object
+          additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - INVALID_REQUEST
+                - UNAUTHORIZED
+                - FORBIDDEN
+                - NOT_YOUR_TURN
+                - GAME_NOT_FOUND
+                - CLAIM_NOT_FOUND
+                - VERSION_CONFLICT
+                - POSITION_OCCUPIED
+                - GAME_FINISHED
+                - GAME_PAUSED
+                - CLAIM_EXPIRED
+                - CLAIM_INVALID
+                - IDEMPOTENCY_KEY_REUSED
+                - INVALID_GAME_CONFIG
+                - POSITION_OUT_OF_RANGE
+                - INTERNAL_ERROR
+            message:
+              type: string
+
+  responses:
+    BadRequest:
+      description: 请求格式或参数非法
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: INVALID_REQUEST
+              message: 请求体不是合法 JSON
+    Unauthorized:
+      description: 缺少凭据或凭据无效
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: 缺少或无效的凭据
+    Forbidden:
+      description: 凭据有效但无权操作该资源
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: FORBIDDEN
+              message: 无权操作该棋局
+    GameNotFound:
+      description: 棋局不存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: GAME_NOT_FOUND
+              message: 棋局不存在
+    ClaimNotFound:
+      description: 租约不存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: CLAIM_NOT_FOUND
+              message: 任务租约不存在
+    VersionConflict:
+      description: 棋局版本与 expected_version 不一致
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: VERSION_CONFLICT
+              message: 棋局版本已经变化
+    InvalidGameConfig:
+      description: 棋局配置非法（模式不匹配、引擎不存在、不可暂停的模式等）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: INVALID_GAME_CONFIG
+              message: 非法的棋局配置
+    InternalError:
+      description: 服务内部错误
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: 服务内部错误
