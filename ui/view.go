@@ -183,13 +183,7 @@ func (a *App) buildAISidePicker(c *mygo.Context, mode gomoku.Mode) {
 
 // buildNewGameButton starts a new game.
 func (a *App) buildNewGameButton(c *mygo.Context) {
-	button := action.Button(c, "开始新棋局", action.ButtonProps{Variant: action.Primary})
-	button.Children(func() {
-		mygo.Row(c).Gap(6).AlignItems(mygo.Center).Children(func() {
-			display.Icon(c, lucide.Plus(), display.IconProps{Size: display.IconSmall})
-			display.Text(c, "开始新棋局", display.TextProps{})
-		})
-	})
+	button := iconButton(c, lucide.Plus(), "开始新棋局", action.ButtonProps{Variant: action.Primary})
 	if button.Clicked() {
 		a.newGame()
 	}
@@ -209,13 +203,7 @@ func (a *App) buildPauseButton(c *mygo.Context) {
 		label = "恢复对战"
 		icon = lucide.Play()
 	}
-	button := action.Button(c, label, action.ButtonProps{Variant: action.Default})
-	button.Children(func() {
-		mygo.Row(c).Gap(6).AlignItems(mygo.Center).Children(func() {
-			display.Icon(c, icon, display.IconProps{Size: display.IconSmall})
-			display.Text(c, label, display.TextProps{})
-		})
-	})
+	button := iconButton(c, icon, label, action.ButtonProps{Variant: action.Default})
 	if button.Clicked() {
 		a.togglePause()
 	}
@@ -241,6 +229,20 @@ func (a *App) buildResult(c *mygo.Context) {
 		alertType = feedback.Warning
 	}
 	feedback.Alert(c, title, feedback.AlertProps{Type: alertType, Variant: feedback.Soft})
+}
+
+// iconButton builds a button with an icon before its label. The button is
+// built without a label of its own, so the label appears once.
+func iconButton(c *mygo.Context, icon *mygo.SVG, label string, props action.ButtonProps) mygo.Element {
+	button := action.StyleButton(c, mygo.ButtonBase(c), "", props)
+	button.Children(func() {
+		mygo.Row(c).Gap(6).AlignItems(mygo.Center).Children(func() {
+			display.Icon(c, icon, display.IconProps{Size: display.IconSmall})
+			// The label takes the color of the button, not the one of the text.
+			mygo.Text(c, label)
+		})
+	})
+	return button
 }
 
 // buildNotice shows the last message of the interface.

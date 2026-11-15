@@ -112,3 +112,43 @@ func TestAISidePickerChoosesTheSide(t *testing.T) {
 		t.Fatalf("AI 执黑时第一回合属于黑棋")
 	}
 }
+
+// TestStartButtonStartsAGame clicks the button in the sidebar and checks that
+// a game starts.
+func TestStartButtonStartsAGame(t *testing.T) {
+	app := newTestApp(t)
+	tester := mygoui.NewTester(app.View(), 1180, 800)
+	tester.Advance(200 * time.Millisecond)
+
+	if err := tester.Click("开始新棋局"); err != nil {
+		t.Fatalf("点击开始按钮失败: %v", err)
+	}
+	tester.Advance(200 * time.Millisecond)
+
+	app.mu.Lock()
+	game := app.st.game
+	app.mu.Unlock()
+	if game == nil {
+		t.Fatalf("点击开始按钮必须创建棋局")
+	}
+}
+
+// TestButtonsShowTheirLabelOnce checks that a button does not render its
+// label twice.
+func TestButtonsShowTheirLabelOnce(t *testing.T) {
+	app := newTestApp(t)
+	app.st.modeIndex = 1
+	app.newGame()
+	tester := mygoui.NewTester(app.View(), 1180, 800)
+	tester.Advance(200 * time.Millisecond)
+
+	counts := map[string]int{}
+	for _, text := range tester.Texts() {
+		counts[text]++
+	}
+	for _, label := range []string{"开始新棋局", "暂停对战"} {
+		if counts[label] != 1 {
+			t.Fatalf("按钮 %q 必须只出现一次, 实际 %d 次", label, counts[label])
+		}
+	}
+}
