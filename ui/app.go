@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -13,17 +14,12 @@ import (
 	"mygo/internal/domain/gomoku"
 )
 
-// modeNames are the labels of the game modes.
-var modeNames = []string{"人机对战", "AI 对战", "人人对战"}
-
-// modeValues are the game modes in the order of modeNames.
-var modeValues = []gomoku.Mode{gomoku.ModeHumanVsAI, gomoku.ModeAIVsAI, gomoku.ModeHumanVsHuman}
-
 // state is the interface state. It never holds the authoritative game state,
 // only the snapshot the view draws and the tokens the interface owns.
 type state struct {
 	modeIndex   int
 	engineIndex int
+	aiIsBlack   bool
 	gameID      string
 	ownerToken  string
 	game        *gomoku.Game
@@ -115,6 +111,13 @@ func (a *App) Mode() gomoku.Mode {
 	return modeValues[a.st.modeIndex]
 }
 
+// AIIsBlack reports whether the AI takes the black stones in a human game.
+func (a *App) AIIsBlack() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.st.aiIsBlack
+}
+
 // EngineID returns the engine selected for the AI side.
 func (a *App) EngineID() string {
 	a.mu.Lock()
@@ -140,20 +143,25 @@ func (a *App) otherEngineID(current string) string {
 func (a *App) newGame() {
 	mode := a.Mode()
 	engine := a.EngineID()
+	aiIsBlack := a.AIIsBlack()
 	players := map[string]application.CreatePlayer{
 		"black": {Type: gomoku.TypeHuman, Config: map[string]any{}},
 		"white": {Type: gomoku.TypeHuman, Config: map[string]any{}},
 	}
 	switch mode {
 	case gomoku.ModeHumanVsAI:
-		players["white"] = application.CreatePlayer{Type: gomoku.TypeAI, EngineID: engine, Config: map[string]any{}}
+		aiSide := "white"
+		if aiIsBlack {
+			aiSide = "black"
+		}
+		players[aiSide] = application.CreatePlayer{Type: gomoku.TypeAI, EngineID: engine, Config: map[string]any{}}
 	case gomoku.ModeAIVsAI:
 		players["black"] = application.CreatePlayer{Type: gomoku.TypeAI, EngineID: engine, Config: map[string]any{}}
 		players["white"] = application.CreatePlayer{Type: gomoku.TypeAI, EngineID: a.otherEngineID(engine), Config: map[string]any{}}
 	}
 	result, err := a.games.Create("", application.CreateGameRequest{Mode: mode, Players: players}, "")
 	if err != nil {
-		a.setNotice(noticeError, err.Error())
+		a.setError(err)
 		return
 	}
 	a.mu.Lock()
@@ -188,8 +196,21 @@ func (a *App) pick(row, col int) {
 		ExpectedVersion: game.Version,
 	})
 	if err != nil {
-		a.setNotice(noticeError, err.Error())
-		return
+		// The board may be one poll behind the AI. Refresh once and retry.
+		if appErr, ok := err.(*application.Error); ok && appErr.Code == application.CodeVersionConflict {
+			a.refresh()
+			if fresh := a.snapshot(); fresh != nil && fresh.Version != game.Version {
+				result, err = a.moves.Submit(game.ID, caller, application.SubmitMoveRequest{
+					Row:             row,
+					Col:             col,
+					ExpectedVersion: fresh.Version,
+				})
+			}
+		}
+		if err != nil {
+			a.setError(err)
+			return
+		}
 	}
 	a.mu.Lock()
 	a.st.game = result.Game
@@ -214,7 +235,7 @@ func (a *App) togglePause() {
 	}
 	updated, err := a.games.SetExecutionState(game.ID, state, nil)
 	if err != nil {
-		a.setNotice(noticeError, err.Error())
+		a.setError(err)
 		return
 	}
 	a.mu.Lock()
@@ -246,12 +267,53 @@ func (a *App) refresh() {
 	a.mu.Unlock()
 }
 
+// snapshot returns the current game snapshot.
+func (a *App) snapshot() *gomoku.Game {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.st.game
+}
+
 // setNotice shows a message in the interface.
 func (a *App) setNotice(kind noticeKind, message string) {
 	a.mu.Lock()
 	a.st.noticeKind = kind
 	a.st.notice = message
 	a.mu.Unlock()
+}
+
+// setError shows an application error as a readable message.
+func (a *App) setError(err error) {
+	var appErr *application.Error
+	if !errors.As(err, &appErr) {
+		a.setError(err)
+		return
+	}
+	a.setNotice(noticeError, errorMessage(appErr.Code))
+}
+
+// errorMessage returns the message of an application error code.
+func errorMessage(code string) string {
+	switch code {
+	case application.CodeNotYourTurn:
+		return "当前不是你的回合，等待对手落子"
+	case application.CodePositionOccupied:
+		return "该位置已经有棋子"
+	case application.CodePositionOutOfRange:
+		return "落点超出棋盘范围"
+	case application.CodeVersionConflict:
+		return "棋局已经变化，请重试"
+	case application.CodeGameFinished:
+		return "本局已经结束，请开始新棋局"
+	case application.CodeGamePaused:
+		return "棋局已暂停"
+	case application.CodeForbidden:
+		return "无权操作该棋局"
+	case application.CodeClaimInvalid, application.CodeClaimExpired:
+		return "AI 任务租约已失效"
+	default:
+		return code
+	}
 }
 
 // playerLabel returns the Chinese name of a player color.
@@ -288,7 +350,7 @@ func describeGame(game *gomoku.Game) string {
 		who = "AI " + sideConfig.EngineName()
 	}
 	if game.Execution == gomoku.ExecutionPaused {
-		return "已暂停 · " + side + " " + who + " 回合"
+		return fmt.Sprintf("已暂停 · 轮到%s（%s）", side, who)
 	}
-	return fmt.Sprintf("第 %d 手 · %s %s 回合", game.MoveCount+1, side, who)
+	return fmt.Sprintf("第 %d 手 · 轮到%s（%s）", game.MoveCount+1, side, who)
 }

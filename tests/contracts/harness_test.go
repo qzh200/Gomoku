@@ -119,6 +119,14 @@ func engineHeaders(engineID string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + engineTokens[engineID]}
 }
 
+// httptestServer starts a server for a test and returns its URL.
+func httptestServer(t *testing.T, handler http.Handler) string {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server.URL
+}
+
 // decode unmarshals a response body.
 func decode(t *testing.T, data []byte) map[string]any {
 	t.Helper()

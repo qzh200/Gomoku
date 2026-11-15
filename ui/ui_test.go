@@ -81,11 +81,12 @@ func TestHumanMoveIsAppliedThroughTheApplicationService(t *testing.T) {
 
 func TestBoardMapsPointerToCell(t *testing.T) {
 	board := newBoardView()
-	row, col := board.cellAt(boardMargin+7*boardCell, boardMargin+3*boardCell)
+	geo := geometryOf(560)
+	row, col := board.cellAt(geo, geo.OriginX+7*geo.Cell, geo.OriginY+3*geo.Cell)
 	if row != 3 || col != 7 {
 		t.Fatalf("指针位置必须映射到正确的格子, 实际 %d,%d", row, col)
 	}
-	if row, col := board.cellAt(2, 2); row != -1 || col != -1 {
+	if row, col := board.cellAt(geo, 2, 2); row != -1 || col != -1 {
 		t.Fatalf("棋盘外的指针必须被拒绝, 实际 %d,%d", row, col)
 	}
 }
@@ -100,11 +101,11 @@ func TestHoverShowsGhostStoneOnlyOnEmptyCell(t *testing.T) {
 	app.mu.Unlock()
 	app.board.Game = game
 	app.board.HoverRow, app.board.HoverCol = 7, 7
-	if app.board.HoverCellFree() {
+	if app.board.hoverCellFree() {
 		t.Fatalf("有棋子的格子不得显示落子预览")
 	}
 	app.board.HoverRow, app.board.HoverCol = 3, 3
-	if !app.board.HoverCellFree() {
+	if !app.board.hoverCellFree() {
 		t.Fatalf("空格子必须显示落子预览")
 	}
 }
