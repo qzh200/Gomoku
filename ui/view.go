@@ -279,7 +279,6 @@ func (a *App) buildGameInfo(c *mygo.Context, tk *theme.Tokens) {
 			a.buildInfoRow(c, lucide.Circle(), "黑棋", sideLabel(game.Black()))
 			a.buildInfoRow(c, lucide.Circle(), "白棋", sideLabel(game.White()))
 			a.buildInfoRow(c, lucide.Dices(), "手数", fmt.Sprintf("%d 手", game.MoveCount))
-			a.buildInfoRow(c, lucide.Clock(), "版本", fmt.Sprintf("%d", game.Version))
 			a.buildInfoRow(c, lucide.Info(), "状态", executionLabel(game))
 		})
 	})
@@ -371,12 +370,11 @@ func (a *App) buildHistory(c *mygo.Context, tk *theme.Tokens) {
 	})
 }
 
-// buildHistoryRow shows one move of the history.
+// buildHistoryRow shows the number of one move, with the color of its stone.
 func (a *App) buildHistoryRow(c *mygo.Context, move gomoku.Move, last bool) {
 	row := mygo.Row(c).Gap(8).AlignItems(mygo.Center).Padding(4, 6).Radius(6).Children(func() {
 		mygo.Box(c).Size(12, 12).Radius(6).Background(stoneColor(move.Player)).Shrink(0)
-		display.Text(c, fmt.Sprintf("#%d", move.Number), display.TextProps{Type: display.TextSecondary, FontSize: 12})
-		display.Text(c, fmt.Sprintf("(%d, %d)", move.Row, move.Col), display.TextProps{FontSize: 13})
+		display.Text(c, fmt.Sprintf("%d", move.Number), display.TextProps{FontSize: 13})
 		mygo.Spacer(c).Grow(1).Basis(0)
 		if last {
 			display.Text(c, "最新", display.TextProps{Type: display.TextSecondary, FontSize: 11})
