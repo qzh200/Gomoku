@@ -1,0 +1,17 @@
+{
+  "local_client_token": "replace-with-a-random-local-token",
+  "engines": [
+    {
+      "engine_id": "classical",
+      "display_name": "Classical AI",
+      "token": "replace-with-a-random-classical-token",
+      "available": true
+    },
+    {
+      "engine_id": "llm",
+      "display_name": "LLM AI",
+      "token": "replace-with-a-random-llm-token",
+      "available": true
+    }
+  ]
+}
