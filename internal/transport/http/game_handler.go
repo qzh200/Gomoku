@@ -64,13 +64,10 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, result)
 }
 
-// handleListGames returns the snapshots of all games.
+// handleListGames returns the snapshots of all games. Reading is open: the
+// service only listens on the loopback interface and never returns a
+// credential.
 func (s *Server) handleListGames(w http.ResponseWriter, r *http.Request) {
-	token := r.Header.Get("X-Local-Client-Token")
-	if token == "" || !s.auth.IsLocalClient(token) {
-		writeError(w, &application.Error{Code: application.CodeUnauthorized, Message: "缺少或无效的本地客户端凭据"})
-		return
-	}
 	writeJSON(w, http.StatusOK, gameListResponse{Items: s.games.List()})
 }
 

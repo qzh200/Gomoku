@@ -214,6 +214,8 @@ Content-Type: application/json
 
 ### 6.2 幂等
 
+`Idempotency-Key` 请求头是**必填**的，缺失时服务端返回 `400 INVALID_REQUEST`。
+
 `Idempotency-Key` 按「调用者 + 接口」作用域去重：
 
 * 相同键 + 相同请求体重试 → 返回**已保存的结果**（HTTP 201），不会重复落子。
@@ -276,7 +278,7 @@ X-Game-Owner-Token 不适用（本地界面通过内部应用服务创建）
 接入前确认：
 
 - [ ] Bearer Token 属于正确的 `engine_id`。
-- [ ] 每次 POST 落子都带 `Idempotency-Key`，重试复用同一个键。
+- [ ] 每次 POST 落子都带 `Idempotency-Key`，重试复用同一个键（缺失会被拒绝）。
 - [ ] `expected_version` 用领取响应里的 `version`。
 - [ ] `claim_id` 用领取响应里的 `claim_id`。
 - [ ] 长推理期间定期 `PATCH` 续期。

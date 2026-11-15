@@ -12,6 +12,10 @@ import (
 // Path is the default location of the configuration file.
 const Path = "configs/engines.json"
 
+// PathEnv names the environment variable that overrides the configuration
+// path.
+const PathEnv = "MYGO_CONFIG"
+
 // Load reads the engine configuration. A missing file is not an error: the
 // process then starts with the preset engines and random tokens.
 func Load(path string) (auth.Config, bool, error) {

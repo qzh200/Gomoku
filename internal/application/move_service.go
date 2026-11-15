@@ -69,15 +69,17 @@ func (s *MoveService) Submit(gameID string, caller Caller, req SubmitMoveRequest
 	s.coord.Lock()
 	defer s.coord.Unlock()
 
-	if record, ok := s.coord.Idempotency().Get(scope); ok {
-		if record.RequestHash != hash {
-			return nil, newError(CodeIdempotencyReused, "幂等键已用于不同的请求")
+	if req.IdempotencyKey != "" {
+		if record, ok := s.coord.Idempotency().Get(scope); ok {
+			if record.RequestHash != hash {
+				return nil, newError(CodeIdempotencyReused, "幂等键已用于不同的请求")
+			}
+			result, ok := record.Response.(*MoveResult)
+			if !ok {
+				return nil, newError(CodeInternalError, "幂等记录损坏")
+			}
+			return result, nil
 		}
-		result, ok := record.Response.(*MoveResult)
-		if !ok {
-			return nil, newError(CodeInternalError, "幂等记录损坏")
-		}
-		return result, nil
 	}
 
 	game, ok := s.coord.Games().Get(gameID)

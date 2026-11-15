@@ -46,7 +46,11 @@ func main() {
 
 // run starts the API server and the desktop window.
 func run(addr string) error {
-	cfg, found, err := config.Load(config.Path)
+	configPath := os.Getenv(config.PathEnv)
+	if configPath == "" {
+		configPath = config.Path
+	}
+	cfg, found, err := config.Load(configPath)
 	if err != nil {
 		return err
 	}
@@ -55,7 +59,7 @@ func run(addr string) error {
 		return err
 	}
 	if !found {
-		log.Printf("未找到 %s，使用内置引擎与随机令牌", config.Path)
+		log.Printf("未找到 %s，使用内置引擎与随机令牌", configPath)
 	}
 
 	games := repository.NewMemoryGames()

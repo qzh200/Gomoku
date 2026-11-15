@@ -7,6 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +31,7 @@ type harness struct {
 	t      *testing.T
 	server *httptest.Server
 	local  string
+	keys   atomic.Uint64
 }
 
 // newHarness starts an API with the preset engines and fixed tokens.
@@ -82,6 +86,11 @@ func (h *harness) do(method, path string, body any, headers map[string]string) (
 	}
 	for name, value := range headers {
 		req.Header.Set(name, value)
+	}
+	if method == http.MethodPost && strings.HasSuffix(path, "/moves") {
+		if req.Header.Get("Idempotency-Key") == "" {
+			req.Header.Set("Idempotency-Key", "key-"+strconv.FormatUint(h.keys.Add(1), 10))
+		}
 	}
 	resp, err := h.server.Client().Do(req)
 	if err != nil {

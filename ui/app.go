@@ -99,9 +99,10 @@ func (a *App) StartPolling() {
 			if win == nil {
 				continue
 			}
-			if id != "" {
-				a.refresh()
+			if id == "" {
+				continue
 			}
+			a.refresh()
 			win.Invalidate()
 		}
 	}()

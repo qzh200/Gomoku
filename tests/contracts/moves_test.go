@@ -5,7 +5,8 @@ import (
 	"testing"
 )
 
-// move sends a move and returns the status and the body.
+// move sends a move and returns the status and the body. Every move needs an
+// idempotency key, so a fresh one is generated unless the headers carry it.
 func (h *harness) move(id string, row, col, version int, headers map[string]string) (int, []byte) {
 	h.t.Helper()
 	body := map[string]any{"row": row, "col": col, "expected_version": version}

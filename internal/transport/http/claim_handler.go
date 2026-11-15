@@ -48,6 +48,11 @@ func (s *Server) handleSubmitMove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	key := r.Header.Get("Idempotency-Key")
+	if key == "" {
+		writeError(w, &application.Error{Code: application.CodeInvalidRequest, Message: "缺少 Idempotency-Key 请求头"})
+		return
+	}
 	var body submitMoveRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, &application.Error{Code: application.CodeInvalidRequest, Message: "请求体不是合法 JSON"})
@@ -58,7 +63,7 @@ func (s *Server) handleSubmitMove(w http.ResponseWriter, r *http.Request) {
 		Col:             body.Col,
 		ExpectedVersion: body.ExpectedVersion,
 		ClaimID:         body.ClaimID,
-		IdempotencyKey:  r.Header.Get("Idempotency-Key"),
+		IdempotencyKey:  key,
 	})
 	if err != nil {
 		writeError(w, err)

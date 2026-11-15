@@ -54,7 +54,7 @@ Worker 的完整协议见 [`docs/ai-protocol.md`](docs/ai-protocol.md)，接口�
 POST /api/v1/ai/turn-claims   { "worker_id": "...", "wait_seconds": 20 }
   204 → 继续轮询
   201 → 解析 board，计算落点，必要时续期租约
-POST /api/v1/games/{game_id}/moves
+POST /api/v1/games/{game_id}/moves   # 必须带 Idempotency-Key 请求头
        { "row": 7, "col": 8, "expected_version": 12, "claim_id": "claim_..." }
 ```
 

@@ -16,10 +16,14 @@ info:
       列出棋局等跨棋局操作。MyGo 启动时在控制台打印该令牌。
     * Engine Token、Owner Token 与 Local Client Token 互不通用；缺失或越权一律
       返回 `401` / `403`。
+    * 写操作需要凭据。读操作（`GET /games`、`GET /games/{id}`、
+      `GET /games/{id}/moves`、`GET /engines`）不需要凭据：服务只监听回环地址，
+      任何响应都不包含凭据。
 
-    幂等：所有写操作（`POST /games`、`POST /games/{id}/moves`）要求
-    `Idempotency-Key` 请求头。键按「调用者 + 接口」作用域去重：相同键 + 相同请求体
-    重试返回已保存的结果；相同键 + 不同请求体返回 `409 IDEMPOTENCY_KEY_REUSED`。
+    幂等：`POST /games/{id}/moves` 必须带 `Idempotency-Key` 请求头，缺失返回
+    `400 INVALID_REQUEST`。`POST /games` 可选该头。键按「调用者 + 接口」作用域去重：
+    相同键 + 相同请求体重试返回已保存的结果；相同键 + 不同请求体返回
+    `409 IDEMPOTENCY_KEY_REUSED`。
 
 servers:
   - url: http://127.0.0.1:8080/api/v1
@@ -44,7 +48,7 @@ paths:
         创建一个新的棋局。重新开局必须调用本接口以获得新的 `game_id`。
         `owner_token` 只在本次响应中返回一次，之后无法通过任何接口再次获取。
       parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/OptionalIdempotencyKey"
       requestBody:
         required: true
         content:
@@ -143,7 +147,8 @@ paths:
     get:
       tags: [games]
       summary: 查询棋局列表
-      description: 返回全部棋局的完整快照，按创建顺序升序排列。
+      description: |
+        返回全部棋局的完整快照，按创建顺序升序排列。读操作不需要凭据。
       responses:
         "200":
           description: 棋局列表
@@ -166,6 +171,7 @@ paths:
     get:
       tags: [games]
       summary: 获取完整棋局
+      description: 返回完整棋局快照。读操作不需要凭据。
       responses:
         "200":
           description: 完整棋局快照
@@ -243,6 +249,7 @@ paths:
     get:
       tags: [moves]
       summary: 查询落子历史
+      description: 返回按实际落子顺序排列的历史。读操作不需要凭据。
       responses:
         "200":
           description: 落子历史，按实际落子顺序排列
@@ -590,6 +597,17 @@ components:
       description: |
         调用者作用域内唯一的请求标识。相同键 + 相同请求体重试返回首次保存的结果；
         相同键 + 不同请求体返回 `409 IDEMPOTENCY_KEY_REUSED`。
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+    OptionalIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        可选。提供时按调用者 + 接口作用域去重：相同键 + 相同请求体重试返回首次
+        保存的结果；相同键 + 不同请求体返回 `409 IDEMPOTENCY_KEY_REUSED`。
       schema:
         type: string
         minLength: 1
