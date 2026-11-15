@@ -1,0 +1,7 @@
+# 运行期生成的引擎配置与凭据
+configs/engines.json
+
+# 编译产物
+/mygo
+/mygo.exe
+/dist/
