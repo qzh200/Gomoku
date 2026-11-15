@@ -92,12 +92,6 @@ func (s *MoveService) Submit(gameID string, caller Caller, req SubmitMoveRequest
 	if err := s.checkTurn(game, caller); err != nil {
 		return nil, err
 	}
-	if game.Status == gomoku.StatusFinished {
-		return nil, newError(CodeGameFinished, "棋局已经结束")
-	}
-	if game.Execution == gomoku.ExecutionPaused {
-		return nil, newError(CodeGamePaused, "棋局已经暂停")
-	}
 	if !gomoku.InBounds(req.Row, req.Col) {
 		return nil, newError(CodePositionOutOfRange, "落点超出棋盘范围")
 	}
@@ -106,6 +100,12 @@ func (s *MoveService) Submit(gameID string, caller Caller, req SubmitMoveRequest
 	}
 	if req.ExpectedVersion != game.Version {
 		return nil, newError(CodeVersionConflict, "棋局版本已经变化")
+	}
+	if game.Status == gomoku.StatusFinished {
+		return nil, newError(CodeGameFinished, "棋局已经结束")
+	}
+	if game.Execution == gomoku.ExecutionPaused {
+		return nil, newError(CodeGamePaused, "棋局已经暂停")
 	}
 	if caller.Kind == CallerEngine {
 		if err := s.checkClaim(game, caller, req.ClaimID); err != nil {
