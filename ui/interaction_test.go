@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -149,6 +150,27 @@ func TestButtonsShowTheirLabelOnce(t *testing.T) {
 	for _, label := range []string{"开始新棋局", "暂停对战"} {
 		if counts[label] != 1 {
 			t.Fatalf("按钮 %q 必须只出现一次, 实际 %d 次", label, counts[label])
+		}
+	}
+}
+
+// TestHistoryShowsEveryMove checks that the move list holds every move of the
+// game, with its number and its place.
+func TestHistoryShowsEveryMove(t *testing.T) {
+	app := newTestApp(t)
+	app.st.modeIndex = 2
+	app.newGame()
+	for _, move := range [][2]int{{7, 7}, {7, 8}, {6, 6}} {
+		app.pick(move[0], move[1])
+	}
+	tester := mygoui.NewTester(app.View(), 1180, 800)
+	tester.Advance(200 * time.Millisecond)
+
+	texts := tester.Texts()
+	joined := strings.Join(texts, "|")
+	for _, want := range []string{"(7, 7)", "(7, 8)", "(6, 6)"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("落子记录必须显示坐标 %s, 实际 %v", want, texts)
 		}
 	}
 }

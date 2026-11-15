@@ -56,6 +56,8 @@ type App struct {
 	st    state
 	board *BoardView
 	win   *mygo.Window
+	// list keeps the place of the move list, so it follows the last move.
+	list mygoui.ListState
 }
 
 // New builds the interface over the application services.

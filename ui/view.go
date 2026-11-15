@@ -342,7 +342,9 @@ func boardSizeFor(width, height float32) float32 {
 	return size
 }
 
-// buildHistory lists the moves of the current game.
+// buildHistory lists the moves of the current game. The list is virtualized,
+// so a long game scrolls instead of overflowing the window, and it follows
+// the last move as the game goes on.
 func (a *App) buildHistory(c *mygo.Context, tk *theme.Tokens) {
 	a.mu.Lock()
 	history := a.st.history
@@ -350,38 +352,46 @@ func (a *App) buildHistory(c *mygo.Context, tk *theme.Tokens) {
 	a.mu.Unlock()
 
 	panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Width(historyWidth).
-		AlignSelf(mygo.Start).Padding(16).Radius(tk.BorderRadiusLG)
+		Padding(16).Radius(tk.BorderRadiusLG)
 	panel.Children(func() {
-		mygo.Column(c).Gap(10).Children(func() {
+		mygo.Column(c).Gap(10).Grow(1).Basis(0).Children(func() {
 			display.Text(c, "落子记录", display.TextProps{Strong: true})
 			if len(history) == 0 {
 				display.Text(c, "还没有落子", display.TextProps{Type: display.TextSecondary, FontSize: 13})
 				return
 			}
-			layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Vertical, Fade: true}, func() {
-				mygo.Column(c).Gap(4).Children(func() {
-					for _, move := range history {
-						a.buildHistoryRow(c, move, game != nil && game.LastMove != nil &&
-							game.LastMove.Number == move.Number)
-					}
-				})
-			})
+			a.list.FollowEnd = true
+			last := game != nil && game.LastMove != nil
+			mygo.List(c, &a.list, len(history), func(i int) {
+				a.buildHistoryRow(c, history[i], last && history[i].Number == game.LastMove.Number, tk)
+			}).Grow(1).Basis(0)
 		})
 	})
 }
 
-// buildHistoryRow shows the number of one move, with the color of its stone.
-func (a *App) buildHistoryRow(c *mygo.Context, move gomoku.Move, last bool) {
-	row := mygo.Row(c).Gap(8).AlignItems(mygo.Center).Padding(4, 6).Radius(6).Children(func() {
-		mygo.Box(c).Size(12, 12).Radius(6).Background(stoneColor(move.Player)).Shrink(0)
-		display.Text(c, fmt.Sprintf("%d", move.Number), display.TextProps{FontSize: 13})
+// buildHistoryRow shows one move: its number, the color of its stone and
+// where it was played.
+func (a *App) buildHistoryRow(c *mygo.Context, move gomoku.Move, last bool, tk *theme.Tokens) {
+	row := mygo.Row(c).Gap(8).AlignItems(mygo.Center).Padding(3, 6).Radius(6).Children(func() {
+		a.buildStoneDot(c, move.Player, tk)
+		display.Text(c, fmt.Sprintf("%d", move.Number), display.TextProps{Type: display.TextSecondary, FontSize: 12})
+		display.Text(c, fmt.Sprintf("(%d, %d)", move.Row, move.Col), display.TextProps{FontSize: 13})
 		mygo.Spacer(c).Grow(1).Basis(0)
 		if last {
 			display.Text(c, "最新", display.TextProps{Type: display.TextSecondary, FontSize: 11})
 		}
 	})
 	if last {
-		row.Background(mygo.RGB(240, 240, 244))
+		row.Background(tk.FillSecondary)
+	}
+}
+
+// buildStoneDot draws the stone of a move. The white stone has a border, so
+// it does not vanish into the panel.
+func (a *App) buildStoneDot(c *mygo.Context, player gomoku.Player, tk *theme.Tokens) {
+	dot := mygo.Box(c).Size(12, 12).Radius(6).Background(stoneColor(player)).Shrink(0)
+	if player == gomoku.PlayerWhite {
+		dot.Border(1, tk.Border)
 	}
 }
 
