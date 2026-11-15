@@ -18,7 +18,7 @@ MyGo 是本地桌面五子棋平台，由一个 Go 进程承担三个角色：
         │      ▼                                                                │
         │  application/  ──用例编排──▶  domain/gomoku（规则）                   │
         │      │              ──读写──▶ repository/（棋局存储）                   │
-        │      │              ──租约──▶ scheduler/（任务队列与租约）              │
+        │      │              ──租约──▶ scheduler/（租约注册表）                  │
         │      ▼                                                                │
         │  transport/http  ──协议转换──▶ application/                            │
         │      ▲                                                                 │
@@ -34,7 +34,7 @@ MyGo 是本地桌面五子棋平台，由一个 Go 进程承担三个角色：
 
 * `domain/gomoku` 只含规则与领域状态，不 import 任何 http / repository / ui 包。
 * `application` 编排用例，不出现 HTTP 状态码，也不出现 JSON 结构。
-* `repository` 只抽象棋局读写；`scheduler` 只管理待领取回合与租约。
+* `repository` 只抽象棋局读写；`scheduler` 只管理租约。
 * `transport/http` 只做协议转换、输入校验、错误码映射。
 * `ui` 只读取 `application` 返回的快照并把用户动作转成应用服务调用；
   UI **不得**直接修改棋盘或规则引擎状态。
@@ -98,8 +98,10 @@ type GameRepository interface {
 
 ### 2.4 `scheduler`
 
-* `queue.go`：待领取回合的发现与广播通知（长轮询用）。
 * `lease.go`：租约注册表、原子领取、续期、释放、过期、频率限制。
+* 待领取回合的发现（当前行动方是 AI、引擎匹配、未暂停、无有效租约）在
+  `application/claim_service.go` 中完成，长轮询的广播通道在
+  `application/coordinator.go` 中提供：长轮询等待时不持有任何锁。
 
 租约模型：
 
@@ -139,12 +141,12 @@ type Lease struct {
 
 | 操作 | 语义 |
 | --- | --- |
-| 领取回合 | 全流程持有仓库锁；同一回合同时最多一个有效租约 |
+| 领取回合 | 全流程持有协调器锁；同一回合同时最多一个有效租约 |
 | 续期 | 校验租约归属与未过期后延长 `expires_at`；受单次上限与累计上限约束 |
 | 释放 | 标记租约失效并立刻广播唤醒其他 Worker |
 | 提交落子 | 在仓库锁内完成校验与落子；`version` 原子 +1 |
 | 暂停 | 失效该棋局全部未完成租约，并阻止新的领取 |
-| 长轮询 | **不持有**仓库锁等待；等待期间用广播通道唤醒，超时返回 204 |
+| 长轮询 | **不持有**协调器锁等待；等待期间用广播通道唤醒，超时返回 204 |
 
 长轮询实现：`ClaimService.Claim` 在一个循环里尝试领取，失败则等待
 `scheduler.Notifier` 的广播通道或超时（`wait_seconds`），请求上下文取消时
