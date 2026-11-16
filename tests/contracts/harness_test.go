@@ -24,6 +24,7 @@ import (
 var engineTokens = map[string]string{
 	"classical": "classical-test-token",
 	"llm":       "llm-test-token",
+	"az":        "az-test-token",
 }
 
 // harness is a running MyGo API with its own storage.
@@ -43,12 +44,27 @@ func newHarness(t *testing.T) *harness {
 // A lease time of zero uses the default.
 func newHarnessWithLease(t *testing.T, leaseTTL time.Duration) *harness {
 	t.Helper()
+	return newHarnessWithEngines(t, leaseTTL, "classical", "llm")
+}
+
+// newHarnessWithEngines starts an API with the given engines and fixed tokens.
+func newHarnessWithEngines(t *testing.T, leaseTTL time.Duration, engineIDs ...string) *harness {
+	t.Helper()
+	engines := make([]auth.EngineConfig, 0, len(engineIDs))
+	for _, engineID := range engineIDs {
+		token, ok := engineTokens[engineID]
+		if !ok {
+			t.Fatalf("测试没有引擎 %q 的令牌", engineID)
+		}
+		engines = append(engines, auth.EngineConfig{
+			EngineID:    engineID,
+			DisplayName: engineID,
+			Token:       token,
+		})
+	}
 	cfg := auth.Config{
 		LocalClientToken: "local-test-token",
-		Engines: []auth.EngineConfig{
-			{EngineID: "classical", DisplayName: "Classical AI", Token: engineTokens["classical"]},
-			{EngineID: "llm", DisplayName: "LLM AI", Token: engineTokens["llm"]},
-		},
+		Engines:          engines,
 	}
 	registry, err := auth.NewRegistry(cfg)
 	if err != nil {

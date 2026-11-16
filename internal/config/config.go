@@ -36,6 +36,7 @@ func Load(path string) (auth.Config, bool, error) {
 // defaultConfig returns the preset engines without tokens.
 func defaultConfig() auth.Config {
 	return auth.Config{Engines: []auth.EngineConfig{
+		{EngineID: "az", DisplayName: "AlphaZero AI"},
 		{EngineID: "classical", DisplayName: "Classical AI"},
 		{EngineID: "llm", DisplayName: "LLM AI"},
 	}}

@@ -5,10 +5,15 @@ configs/engines.runtime.json
 # 引擎参数文件，含 API Key
 .env
 llm_worker/.env
+az_worker/.env
 
 # Python
 __pycache__/
 *.pyc
+
+# AlphaZero 的虚拟环境与训练产物
+/.venv/
+/models/
 
 # 编译产物
 /mygo

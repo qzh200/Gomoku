@@ -12,6 +12,12 @@
       "display_name": "LLM AI",
       "token": "replace-with-a-random-llm-token",
       "available": true
+    },
+    {
+      "engine_id": "az",
+      "display_name": "AlphaZero AI",
+      "token": "replace-with-a-random-az-token",
+      "available": true
     }
   ]
 }

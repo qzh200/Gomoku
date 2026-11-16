@@ -84,6 +84,53 @@ python -m classical_worker
 算法细节、评分表与参数见 [`docs/classical-engine.md`](docs/classical-engine.md)。
 设计决策与分阶段验收见 [`docs/classical-engine-v2.md`](docs/classical-engine-v2.md)。
 
+## AlphaZero 引擎
+
+`az_worker/` 是 `az` 引擎：**策略网络 + 价值网络 + PUCT 搜索**。不用手写棋型，
+棋力来自自对弈训练。它需要 PyTorch 和一块显卡，本仓库带了虚拟环境。
+
+```sh
+python -m venv .venv
+.venv/Scripts/python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+.venv/Scripts/python -m pip install numpy
+```
+
+先训练，再对局（**先训练**是硬要求：没有权重的网络什么都不会）。**训练前先预热**：
+让传统引擎当老师把棋型灌进网络，不预热的自对弈学不到东西（实测策略验证损失
+卡在 4.2 不动）：
+
+```sh
+.venv/Scripts/python -m az_worker.warmstart --games 300 --time 0.1 --steps 2000 \
+  --teacher-moves 4 --decay 1.5 --model models/az/warmstart.pt
+.venv/Scripts/python -m az_worker.train --init models/az/warmstart.pt \
+  --model models/az/current.pt --games 10 --iterations 10 --simulations 200 \
+  --lr 1e-4 --device cuda
+go run ./cmd/app                       # MyGo 写令牌
+.venv/Scripts/python -m az_worker
+```
+
+- 网络看三个 15×15 平面（自己的子、对手的子、上一手），策略头给 225 个格子打分，
+  价值头给出这盘谁占优；
+- 搜索是 PUCT：策略当先验、价值当结果，非法着法直接屏蔽；
+- 成五和「对方的五点」在搜索之前直判：能成五就成五，对方有五点就堵；对方有
+  两个五点（活四、双四）时这局已经输了，引擎还是走最不坏的堵法；
+- 训练用八种对称增强，策略目标是搜索自己的访问分布，价值目标是整局结果。
+
+想知道训练有没有用，就打擂台赛：
+
+```sh
+.venv/Scripts/python -m az_worker.arena --games 20 --device cuda
+```
+
+**它现在打不过传统引擎**：把网络整个换成传统引擎自己的策略与价值，AlphaZero 的
+搜索仍然输——差距在搜索结构，不在网络。详见
+[`docs/az-engine.md`](docs/az-engine.md) 第 9 节的实测。这个引擎的定位是
+**可运行的第三个引擎 + AlphaZero 实验台**，不是最强的棋手。
+
+参数写在 `az_worker/.env`（模板 `.env.example`），设计与训练说明见
+[`docs/az-engine.md`](docs/az-engine.md)，**逐步的操作手册见
+[`docs/az-training.md`](docs/az-training.md)**。
+
 ## LLM 引擎
 
 `llm_worker/` 是一个真正的 LLM 引擎：它按同一套 Worker 协议领任务，用
@@ -143,6 +190,7 @@ go vet ./...
 go test ./...
 python -m unittest discover -s classical_worker/tests -t .
 python -m unittest discover -s llm_worker/tests -t .
+.venv/Scripts/python -m unittest discover -s az_worker/tests -t .
 ```
 
 * `internal/domain/gomoku`：四方向胜负、平局、非法落点。
@@ -153,6 +201,8 @@ python -m unittest discover -s llm_worker/tests -t .
 * `ui`：`ui.NewTester` 无头渲染与交互断言。
 * `classical_worker/tests`：评分、落子/撤销、连五与堵四、候选排序，以及
   alpha-beta 与不剪枝 negamax 的等价性。
+* `az_worker/tests`：棋盘规则、平面对称、PUCT 搜索的访问数守恒、自对弈样本、
+  训练损失下降与参数读取（需要 PyTorch）。
 * `llm_worker/tests`：参数解析、棋盘绘制、坐标解析、落点校验的单元测试。
 
 ## 安全边界
