@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var boardLine = regexp.MustCompile(`(?m)^(\d{2}) ((?:[.XO] ){14}[.XO])$`)
+var boardLine = regexp.MustCompile(`(?m)^\s*(\d{1,2}) ((?:[.XO] ){14}[.XO])$`)
 
 func stubOpenAI(t *testing.T) string {
 	t.Helper()
@@ -45,11 +45,11 @@ func stubOpenAI(t *testing.T) string {
 			return
 		}
 
-		move := fmt.Sprintf("%c%d", 'A'+col, row+1)
+		move := map[string]any{"row": row, "col": col}
 		body, err := json.Marshal(map[string]any{
 			"choices": []any{
 				map[string]any{"message": map[string]any{
-					"content": fmt.Sprintf(`{"move":"%s"}`, move),
+					"content": fmt.Sprintf(`{"move":%s}`, mustJSON(t, move)),
 				}},
 			},
 		})
@@ -65,12 +65,15 @@ func stubOpenAI(t *testing.T) string {
 
 func stubMove(prompt string) (int, int, bool) {
 	mark := byte('X')
-	if strings.Contains(prompt, "当前执子方：白棋") {
+	if strings.Contains(prompt, "当前轮到你执白棋") {
 		mark = 'O'
 	}
 	grid := [15][15]byte{}
 	for _, match := range boardLine.FindAllStringSubmatch(prompt, -1) {
-		row := int(match[1][0]-'0')*10 + int(match[1][1]-'0') - 1
+		row := atoi(match[1])
+		if row < 0 || row >= 15 {
+			continue
+		}
 		cells := strings.Split(strings.TrimSpace(match[2]), " ")
 		for col, cell := range cells {
 			grid[row][col] = cell[0]
@@ -115,6 +118,26 @@ func abs(v int) int {
 		return -v
 	}
 	return v
+}
+
+func atoi(text string) int {
+	value := 0
+	for _, r := range text {
+		if r < '0' || r > '9' {
+			return -1
+		}
+		value = value*10 + int(r-'0')
+	}
+	return value
+}
+
+func mustJSON(t *testing.T, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("序列化失败: %v", err)
+	}
+	return string(data)
 }
 
 func winningCell(grid [15][15]byte, mark byte) (int, int, bool) {

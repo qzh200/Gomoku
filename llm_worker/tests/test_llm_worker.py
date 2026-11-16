@@ -31,6 +31,11 @@ def empty_board() -> list[list[int]]:
     return [[0] * board.BOARD_SIZE for _ in range(board.BOARD_SIZE)]
 
 
+def board_state_value(state: list[list[int]], cell: tuple[int, int]) -> int:
+    row, col = cell
+    return state[row][col]
+
+
 class ParseDotenvTests(unittest.TestCase):
     def test_reads_pairs_and_skips_comments(self) -> None:
         values = parse_dotenv(
@@ -98,15 +103,15 @@ class SettingsTests(unittest.TestCase):
 
 
 class BoardTests(unittest.TestCase):
-    def test_renders_the_labels_of_the_board(self) -> None:
+    def test_renders_the_board_with_zero_based_numbers(self) -> None:
         state = empty_board()
         state[0][0] = board.BLACK
         state[1][2] = board.WHITE
         text = board.render_board(state)
-        self.assertIn("A B C D E F G H I J K L M N O", text)
-        self.assertIn("01 X . .", text)
-        self.assertIn("02 . . O", text)
-        self.assertIn("15", text)
+        self.assertIn("行\\列 0 1 2", text)
+        self.assertIn(" 0 X . .", text)
+        self.assertIn(" 1 . . O", text)
+        self.assertIn("14", text)
 
     def test_parses_a_coordinate_of_the_labels(self) -> None:
         self.assertEqual(board.parse_coordinate("H8"), (7, 7))
@@ -121,6 +126,11 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(board.parse_move("H8"), (7, 7))
         self.assertIsNone(board.parse_move("我不知道"))
 
+    def test_parses_a_move_with_row_and_col(self) -> None:
+        self.assertEqual(board.parse_move('{"move": {"row": 7, "col": 7}}'), (7, 7))
+        self.assertEqual(board.parse_move('{"move": {"row": 0, "col": 14}}'), (0, 14))
+        self.assertIsNone(board.parse_move('{"move": {"row": 15, "col": 0}}'))
+
     def test_reads_numbers_as_the_labels_of_the_board(self) -> None:
         self.assertEqual(board.parse_move('{"row": 5, "col": 13}'), (4, 12))
         self.assertEqual(board.parse_move('{"row": 1, "col": 1}'), (0, 0))
@@ -131,26 +141,26 @@ class BoardTests(unittest.TestCase):
     def test_ignores_the_reasoning_prose(self) -> None:
         self.assertIsNone(board.parse_move_strict("对手在 M8 有子，我下 I9"))
         self.assertEqual(board.parse_move_strict('{"move": "I9"}'), (8, 8))
+        self.assertEqual(
+            board.parse_move_strict('{"move": {"row": 8, "col": 8}}'), (8, 8)
+        )
 
-    def test_offers_the_empty_cells_next_to_the_stones(self) -> None:
+    def test_finds_an_empty_cell(self) -> None:
         state = empty_board()
         state[7][7] = board.BLACK
-        cells = board.candidates(state)
-        self.assertNotIn((7, 7), cells)
-        self.assertIn((7, 6), cells)
-        self.assertIn((8, 8), cells)
+        cell = board.fallback_cell(state)
+        self.assertIsNotNone(cell)
+        self.assertNotEqual(cell, (7, 7))
+        self.assertEqual(board_state_value(state, cell), 0)
 
-        self.assertNotIn((0, 0), cells)
-
-        self.assertIn((7, 6), cells[:8])
-
-    def test_offers_the_center_on_an_empty_board(self) -> None:
-        self.assertEqual(board.candidates(empty_board()), [(7, 7)])
+    def test_reports_a_full_board(self) -> None:
+        state = [[1 if (row + col) % 2 == 0 else 2 for col in range(15)] for row in range(15)]
+        self.assertIsNone(board.fallback_cell(state))
 
 
 class EngineTests(unittest.TestCase):
     def test_takes_the_move_of_the_model(self) -> None:
-        client = FakeClient(['{"move": "H8"}'])
+        client = FakeClient(['{"move": {"row": 7, "col": 7}}'])
         engine = LLMEngine(client)
         state = empty_board()
         move = engine.choose_move(state, [], board.BLACK)
@@ -158,54 +168,64 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(len(client.calls), 1)
         system = client.calls[0][0]
         self.assertEqual(system.role, "system")
-        self.assertIn("A B C", client.calls[0][1].content)
+        self.assertIn("行\\列 0 1 2", client.calls[0][1].content)
+
+    def test_the_prompt_tells_the_size_the_stones_and_the_last_move(self) -> None:
+        state = empty_board()
+        state[7][7] = board.BLACK
+        state[8][8] = board.WHITE
+        client = FakeClient(['{"move": {"row": 0, "col": 0}}'])
+        engine = LLMEngine(client)
+        engine.choose_move(
+            state,
+            [{"row": 7, "col": 7, "number": 1, "player": board.BLACK}],
+            board.WHITE,
+            {"row": 7, "col": 7, "player": board.BLACK},
+        )
+        prompt = client.calls[0][1].content
+        self.assertIn("15 行 × 15 列", prompt)
+        self.assertIn("我方（白棋）的棋子坐标：(8, 8)", prompt)
+        self.assertIn("对方（黑棋）的棋子坐标：(7, 7)", prompt)
+        self.assertIn("最后一手是黑棋，下在 (7, 7)", prompt)
 
     def test_asks_again_when_the_cell_is_taken(self) -> None:
         state = empty_board()
         state[3][3] = board.WHITE
-        client = FakeClient(['{"move": "D4"}', '{"move": "E5"}'])
+        client = FakeClient(
+            ['{"move": {"row": 3, "col": 3}}', '{"move": {"row": 4, "col": 4}}']
+        )
         engine = LLMEngine(client, max_attempts=2)
         self.assertEqual(engine.choose_move(state, [], board.BLACK), (4, 4))
         self.assertEqual(len(client.calls), 2)
         problem = client.calls[1][-1].content
-        self.assertIn("D4", problem)
+        self.assertIn("(3, 3)", problem)
         self.assertIn("已有棋子", problem)
 
-    def test_the_correction_names_the_cells_to_choose_from(self) -> None:
-        state = empty_board()
-        state[3][3] = board.WHITE
-        client = FakeClient(['{"move": "D4"}', '{"move": "E5"}'])
-        engine = LLMEngine(client, max_attempts=2)
-        engine.choose_move(state, [], board.BLACK)
-        problem = client.calls[1][-1].content
-
-
-        self.assertIn("只能从这些点里选", problem)
-        self.assertIn(board.coordinate_of(3, 4), problem)
-
-    def test_a_cell_far_from_the_fight_is_refused(self) -> None:
+    def test_any_empty_cell_is_accepted(self) -> None:
         state = empty_board()
         state[7][7] = board.BLACK
-        client = FakeClient(['{"move": "B6"}', '{"move": "H9"}'])
+        client = FakeClient(['{"move": {"row": 5, "col": 1}}'])
         engine = LLMEngine(client, max_attempts=2)
         move = engine.choose_move(state, [], board.WHITE)
-        self.assertEqual(move, (8, 7))
-        self.assertIn("不在可下点里", client.calls[1][-1].content)
+        self.assertEqual(move, (5, 1))
+        self.assertEqual(len(client.calls), 1)
 
     def test_plays_a_legal_cell_when_the_model_never_complies(self) -> None:
         state = empty_board()
         state[7][7] = board.BLACK
-        client = FakeClient(['{"move": "B6"}', '{"move": "B6"}'])
+        client = FakeClient(
+            ['{"move": {"row": 7, "col": 7}}', '{"move": {"row": 7, "col": 7}}']
+        )
         engine = LLMEngine(client, max_attempts=2)
         move = engine.choose_move(state, [], board.WHITE)
-        self.assertNotEqual(move, (5, 1))
+        self.assertNotEqual(move, (7, 7))
         self.assertTrue(board.is_empty(state, *move))
 
     def test_plays_a_legal_cell_when_the_answer_cannot_be_read(self) -> None:
         client = FakeClient(["不知道", "还是不知道"])
         engine = LLMEngine(client, max_attempts=2)
         move = engine.choose_move(empty_board(), [], board.BLACK)
-        self.assertEqual(move, (7, 7))
+        self.assertTrue(board.is_empty(empty_board(), *move))
 
     def test_reports_a_full_board(self) -> None:
         state = [[1 if (row + col) % 2 == 0 else 2 for col in range(15)] for row in range(15)]
