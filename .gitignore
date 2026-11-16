@@ -1,6 +1,14 @@
 # 运行期生成的引擎配置与凭据
 configs/engines.json
 
+# 引擎参数文件，含 API Key
+.env
+llm_worker/.env
+
+# Python
+__pycache__/
+*.pyc
+
 # 编译产物
 /mygo
 /mygo.exe
