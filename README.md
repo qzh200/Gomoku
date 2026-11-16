@@ -72,14 +72,18 @@ python mock_worker/mock_worker.py --engine classical --token <engine_token>
 **OpenAI 兼容协议**向模型服务提问，把答案校验成合法落点后提交。
 
 ```sh
-cp llm_worker/.env.example llm_worker/.env   # 填参数
+go run ./cmd/app                       # 先起 MyGo，它会把令牌写进 configs/engines.runtime.json
+cp llm_worker/.env.example llm_worker/.env   # 填模型参数
 python -m llm_worker
 ```
 
-参数写在 `.env` 里：MyGo 地址与 `llm` 引擎令牌、模型服务地址与 API Key、模型名、
-温度、超时。`OPENAI_BASE_URL` 一换就能用 DeepSeek、Moonshot、Ollama、LM Studio、
-vLLM 等兼容服务。模型思考期间后台续租约，慢模型也不会丢手；回答不合法会带着
-原因让模型重选。
+**令牌不用手工复制**：MyGo 启动时把生效的引擎注册表写到
+`configs/engines.runtime.json`，Worker 从那里读自己的 token。
+
+其余参数写在 `.env` 里：模型服务地址与 API Key、模型名、温度、token 预算。
+`OPENAI_BASE_URL` 一换就能用 DeepSeek、Moonshot、Ollama、LM Studio、vLLM 等
+兼容服务。模型思考期间后台续租约，慢模型也不会丢手；回答不合法会带着原因让
+模型重选；服务出错会退避，不会反复追问。
 
 设计与参数说明见 [`docs/llm-engine.md`](docs/llm-engine.md)。
 

@@ -60,7 +60,9 @@ OPENAI_MODEL=deepseek-chat python -m llm_worker
 | 变量 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `MYGO_URL` | 否 | `http://127.0.0.1:8080/api/v1` | MyGo API 根地址 |
-| `MYGO_ENGINE_TOKEN` | **是** | — | `llm` 引擎的 Bearer Token，取自 `configs/engines.json` |
+| `MYGO_ENGINE_TOKEN` | 否 | 自动获取 | 引擎的 Bearer Token；留空则从运行时配置文件读 |
+| `MYGO_ENGINE_ID` | 否 | `llm` | Worker 使用的引擎标识，对应 `engine_id` |
+| `MYGO_RUNTIME_CONFIG` | 否 | `configs/engines.runtime.json` | MyGo 写运行时令牌的文件 |
 | `MYGO_WORKER_ID` | 否 | `llm-worker-01` | Worker 标识，只用于日志 |
 | `MYGO_WAIT_SECONDS` | 否 | `20` | 长轮询等待秒数（0–120） |
 | `MYGO_LEASE_EXTEND_SECONDS` | 否 | `120` | 租约续期长度 |
@@ -68,12 +70,39 @@ OPENAI_MODEL=deepseek-chat python -m llm_worker
 | `OPENAI_API_KEY` | **是** | — | 模型服务的 API Key |
 | `OPENAI_MODEL` | 否 | `gpt-4o-mini` | 模型名 |
 | `OPENAI_TEMPERATURE` | 否 | `0.2` | 采样温度 |
-| `OPENAI_MAX_TOKENS` | 否 | `200` | 单次回答的 token 上限 |
+| `OPENAI_MAX_TOKENS` | 否 | `2000` | 单次回答的 token 上限 |
 | `OPENAI_TIMEOUT` | 否 | `60` | 请求超时秒数 |
 | `OPENAI_MAX_ATTEMPTS` | 否 | `2` | 答案不合法时的重试次数 |
+| `OPENAI_DISABLE_THINKING` | 否 | `0` | 填 `1` 关闭模型的思考模式 |
 
-`MYGO_ENGINE_TOKEN` 与 `configs/engines.json` 里 `engine_id` 为 `llm` 的
-`token` 必须是同一个值，否则服务端返回 401。
+### 令牌自动获取
+
+MyGo 启动时把生效的引擎注册表写到 `configs/engines.runtime.json`（权限 0600，
+不进版本库），Worker 直接从那里读自己的令牌，**不用手工复制**：
+
+```
+MyGo 启动 → 写 configs/engines.runtime.json
+Worker 启动 → 读该文件，取 engine_id 对应的 token
+```
+
+查找顺序：`MYGO_ENGINE_TOKEN`（显式设置）→ `MYGO_RUNTIME_CONFIG` 指定的文件 →
+`configs/engines.runtime.json`。用别的 MyGo 实例时，把 `MYGO_URL` 和
+`MYGO_ENGINE_TOKEN` 一起填上即可。
+
+MyGo 重启会换掉随机生成的令牌，所以**先启动 MyGo，再启动 Worker**。
+
+### 推理模型（deepseek-flash、deepseek-reasoner 等）
+
+推理模型会把 token 预算花在思考上，回答正文可能为空，只有 `reasoning_content`
+里有内容。两种应对方式：
+
+* `OPENAI_DISABLE_THINKING=1` —— 请求里带 `thinking: {"type": "disabled"}`，
+  关闭思考。落子这种短任务本来就该直接回答，最省也最快。服务不认这个参数时
+  Worker 会自动去掉它重试一次。
+* 调大 `OPENAI_MAX_TOKENS` —— 思考也要预算，默认 2000。
+
+即使如此，Worker 也做了兜底：`content` 为空时读 `reasoning_content`；思考被
+截断（`finish_reason` 是 `length`）时报出明确原因，而不是笼统的「回答是空的」。
 
 ### 兼容的服务
 
@@ -91,15 +120,17 @@ OPENAI_MODEL=deepseek-chat python -m llm_worker
 ## 3. 运行
 
 ```sh
-# 1. 启动 MyGo，它会打印本地令牌和引擎令牌
+# 1. 启动 MyGo，它会写好 configs/engines.runtime.json
 go run ./cmd/app
 
-# 2. 填好 llm_worker/.env
+# 2. 填好 llm_worker/.env（至少要有 OPENAI_API_KEY）
 # 3. 启动 LLM Worker
 python -m llm_worker
 ```
 
-桌面界面里选「AI 对战」，把先手或后手指向 `LLM AI`，开始新棋局即可。
+Worker 会自己从 `configs/engines.runtime.json` 取令牌，所以第 1 步必须先做。
+
+桌面界面里选「AI 对战」，把先手或后手指向 `LLM AI」，开始新棋局即可。
 
 ## 4. 工作方式
 
@@ -117,6 +148,9 @@ python -m llm_worker
 
 模型算不出来时，Worker 主动释放租约（`DELETE /api/v1/ai/turn-claims/{id}`），
 这一手重新回到待领取队列，别的 Worker 还能接手。
+
+失败不会让 Worker 退出，但会**逐步退避**（2 秒起步，翻倍到 60 秒封顶），这样
+服务坏了也不会被反复追问。
 
 ## 5. 测试
 
@@ -137,5 +171,9 @@ go test ./tests/contracts/ -run TestLLMWorkerFinishesAGame
 
 * 每手棋一次模型调用，费用与模型单价一致；长对局要留意 token 消耗。
 * 提示词带整张棋盘和完整历史，对局越长请求越大。
+* 推理模型不关思考时，一次落子可能消耗几千 token；`OPENAI_DISABLE_THINKING=1`
+  能省下大部分。
 * Worker 不判断胜负，也不改棋盘，所有规则由 MyGo 判定。
 * 回答不合法时只重试固定次数，不做无限循环。
+* 令牌在 `configs/engines.runtime.json` 里，是明文；该文件不进版本库，但要
+  按凭据对待。
