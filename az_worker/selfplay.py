@@ -4,6 +4,7 @@ import random
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from .board import BLACK, Board, other
@@ -20,9 +21,9 @@ DEFAULT_AUGMENT = True
 
 @dataclass
 class Example:
-    planes: list[list[list[float]]]
-    policy: list[float]
-    legal: list[float]
+    planes: np.ndarray
+    policy: np.ndarray
+    legal: np.ndarray
     value: float = 0.0
 
     teacher_cell: int = -1
@@ -144,7 +145,7 @@ class SelfPlay:
 
 def augment(
     example: Example, rng: random.Random
-) -> tuple[list[list[list[float]]], list[float], list[float]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     index = rng.randrange(len(TRANSFORMS))
     if index == 0:
         return example.planes, example.policy, example.legal
@@ -189,7 +190,13 @@ def train(
             legal.append(item_legal)
             values.append(example.value)
         loss, policy_loss, value_loss = train_batch(
-            model, optimizer, planes, policies, values, legal, device
+            model,
+            optimizer,
+            np.stack(planes),
+            np.stack(policies),
+            np.array(values, dtype=np.float32),
+            np.stack(legal),
+            device,
         )
         losses.append(loss)
         if log and len(losses) % 20 == 0:
@@ -255,18 +262,18 @@ def evaluate(
     with torch.no_grad():
         for start in range(0, len(examples), batch_size):
             batch = examples[start : start + batch_size]
-            planes = torch.tensor(
-                [example.planes for example in batch], dtype=torch.float32, device=device
-            )
-            policy_target = torch.tensor(
-                [example.policy for example in batch], dtype=torch.float32, device=device
-            )
-            value_target = torch.tensor(
-                [example.value for example in batch], dtype=torch.float32, device=device
-            )
-            mask = torch.tensor(
-                [example.legal for example in batch], dtype=torch.float32, device=device
-            )
+            planes = torch.from_numpy(
+                np.stack([example.planes for example in batch]).astype(np.float32)
+            ).to(device)
+            policy_target = torch.from_numpy(
+                np.stack([example.policy for example in batch]).astype(np.float32)
+            ).to(device)
+            value_target = torch.from_numpy(
+                np.array([example.value for example in batch], dtype=np.float32)
+            ).to(device)
+            mask = torch.from_numpy(
+                np.stack([example.legal for example in batch]).astype(np.float32)
+            ).to(device)
             logits, predicted = model(planes)
             logits = logits.masked_fill(mask == 0, -1e9)
             log_probabilities = torch.log_softmax(logits, dim=1)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -59,36 +60,34 @@ class GomokuNet(nn.Module):
 
 def evaluate(
     model: GomokuNet,
-    planes: list[list[list[float]]],
-    masks: list[list[float]],
+    planes: np.ndarray,
+    masks: np.ndarray,
     device: torch.device,
-) -> tuple[list[list[float]], list[float]]:
+) -> tuple[np.ndarray, np.ndarray]:
     model.eval()
     with torch.no_grad():
-        batch = torch.tensor(planes, dtype=torch.float32, device=device)
-        mask = torch.tensor(masks, dtype=torch.float32, device=device)
+        batch = torch.from_numpy(np.ascontiguousarray(planes)).to(device)
+        mask = torch.from_numpy(np.ascontiguousarray(masks)).to(device)
         logits, values = model(batch)
-
-
         logits = logits.masked_fill(mask == 0, -1e9)
         probabilities = torch.softmax(logits, dim=1)
-    return probabilities.cpu().tolist(), values.cpu().tolist()
+    return probabilities.cpu().numpy(), values.cpu().numpy()
 
 
 def train_batch(
     model: GomokuNet,
     optimizer: torch.optim.Optimizer,
-    planes: list[list[list[float]]],
-    policies: list[list[float]],
-    values: list[float],
-    legal: list[list[float]],
+    planes: np.ndarray,
+    policies: np.ndarray,
+    values: np.ndarray,
+    legal: np.ndarray,
     device: torch.device,
 ) -> tuple[float, float, float]:
     model.train()
-    batch = torch.tensor(planes, dtype=torch.float32, device=device)
-    target_policy = torch.tensor(policies, dtype=torch.float32, device=device)
-    target_value = torch.tensor(values, dtype=torch.float32, device=device)
-    mask = torch.tensor(legal, dtype=torch.float32, device=device)
+    batch = torch.from_numpy(np.ascontiguousarray(planes)).to(device)
+    target_policy = torch.from_numpy(np.ascontiguousarray(policies)).to(device)
+    target_value = torch.from_numpy(np.ascontiguousarray(values)).to(device)
+    mask = torch.from_numpy(np.ascontiguousarray(legal)).to(device)
     return train_tensors(model, optimizer, batch, target_policy, target_value, mask)
 
 
@@ -131,6 +130,7 @@ def save(model: GomokuNet, path: str) -> None:
             "channels": model.channels,
             "blocks": model.blocks,
             "value_hidden": model.value_hidden,
+            "planes": PLANE_COUNT,
         },
         path,
     )
@@ -141,9 +141,24 @@ def _count_blocks(state: dict) -> int:
     return len(names)
 
 
+def _expand_stem(state: dict) -> dict:
+    """旧权重只有三个平面，威胁平面对应的输入通道补零，行为保持不变。"""
+    weight = state.get("stem.weight")
+    if weight is None or weight.shape[1] == PLANE_COUNT:
+        return state
+    expanded = torch.zeros(
+        (weight.shape[0], PLANE_COUNT, weight.shape[2], weight.shape[3]),
+        dtype=weight.dtype,
+    )
+    expanded[:, : weight.shape[1]] = weight
+    state = dict(state)
+    state["stem.weight"] = expanded
+    return state
+
+
 def load_model(path: str, device: torch.device) -> GomokuNet:
     payload = torch.load(path, map_location=device)
-    state = payload["state"]
+    state = _expand_stem(payload["state"])
     channels = int(payload.get("channels", state["stem.weight"].shape[0]))
     blocks = int(payload.get("blocks", _count_blocks(state)))
     value_hidden = int(payload.get("value_hidden", state["value_fc1.weight"].shape[0]))

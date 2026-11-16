@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import numpy as np
+
 from .board import BOARD_SIZE
+from .threats import STRIDE, board_masks, threat_masks
 
 
-PLANE_COUNT = 3
+PLANE_COUNT = 7
 
 
 PLANE_SELF = 0
@@ -11,6 +14,14 @@ PLANE_SELF = 0
 PLANE_OTHER = 1
 
 PLANE_LAST = 2
+
+PLANE_SELF_FIVE = 3
+
+PLANE_OTHER_FIVE = 4
+
+PLANE_SELF_OPEN_FOUR = 5
+
+PLANE_OTHER_OPEN_FOUR = 6
 
 
 def _transforms() -> list[tuple[int, int]]:
@@ -58,47 +69,60 @@ def _transforms() -> list[tuple[int, int]]:
 TRANSFORMS = _transforms()
 
 
-CELL_PERMUTATIONS = tuple(backward for _, backward in TRANSFORMS)
+CELL_PERMUTATIONS = tuple(
+    np.array(backward, dtype=np.int64) for _, backward in TRANSFORMS
+)
 
 
-def encode(board, player: int, last_move: tuple[int, int] | None) -> list[list[list[float]]]:
-    planes = [
-        [[0.0] * BOARD_SIZE for _ in range(BOARD_SIZE)],
-        [[0.0] * BOARD_SIZE for _ in range(BOARD_SIZE)],
-        [[0.0] * BOARD_SIZE for _ in range(BOARD_SIZE)],
-    ]
+def _mark(plane: np.ndarray, mask: int) -> None:
+    while mask:
+        low = mask & -mask
+        index = low.bit_length() - 1
+        row, col = divmod(index, STRIDE)
+        plane[row, col] = 1.0
+        mask ^= low
+
+
+def as_planes(value) -> np.ndarray:
+    """把旧存档里的嵌套列表统一成 (平面数, 15, 15) 的数组。"""
+    array = np.asarray(value, dtype=np.float32)
+    if array.shape != (PLANE_COUNT, BOARD_SIZE, BOARD_SIZE):
+        raise ValueError(
+            f"平面数是 {array.shape[0]}，现在是 {PLANE_COUNT}，这份数据过期了，要重新采集"
+        )
+    return array
+
+
+def encode(board, player: int, last_move: tuple[int, int] | None) -> np.ndarray:
+    planes = np.zeros((PLANE_COUNT, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
     for row, col, stone in board.stones:
         plane = PLANE_SELF if stone == player else PLANE_OTHER
-        planes[plane][row][col] = 1.0
+        planes[plane, row, col] = 1.0
     if last_move is not None:
-        planes[PLANE_LAST][last_move[0]][last_move[1]] = 1.0
+        planes[PLANE_LAST, last_move[0], last_move[1]] = 1.0
+
+    own, other, empty = board_masks(board, player)
+    self_five, other_five, self_four, other_four = threat_masks(own, other, empty)
+    _mark(planes[PLANE_SELF_FIVE], self_five)
+    _mark(planes[PLANE_OTHER_FIVE], other_five)
+    _mark(planes[PLANE_SELF_OPEN_FOUR], self_four)
+    _mark(planes[PLANE_OTHER_OPEN_FOUR], other_four)
     return planes
 
 
-def transform_planes(planes, index: int) -> list[list[list[float]]]:
-    forward, _ = TRANSFORMS[index]
-    result = []
-    for plane in planes:
-        new_plane = [[0.0] * BOARD_SIZE for _ in range(BOARD_SIZE)]
-        for row in range(BOARD_SIZE):
-            for col in range(BOARD_SIZE):
-                if plane[row][col]:
-                    new_row, new_col = divmod(forward(row * BOARD_SIZE + col), BOARD_SIZE)
-                    new_plane[new_row][new_col] = plane[row][col]
-        result.append(new_plane)
-    return result
+def transform_planes(planes: np.ndarray, index: int) -> np.ndarray:
+    permutation = CELL_PERMUTATIONS[index]
+    count = planes.shape[0]
+    flat = planes.reshape(count, BOARD_SIZE * BOARD_SIZE)
+    return flat[:, permutation].reshape(planes.shape)
 
 
-def transform_policy(policy: list[float], index: int) -> list[float]:
-    forward, _ = TRANSFORMS[index]
-    result = [0.0] * len(policy)
-    for cell, value in enumerate(policy):
-        result[forward(cell)] = value
-    return result
+def transform_policy(policy: np.ndarray, index: int) -> np.ndarray:
+    return policy[CELL_PERMUTATIONS[index]]
 
 
-def legal_mask(board, radius: int = 1) -> list[float]:
-    mask = [0.0] * (BOARD_SIZE * BOARD_SIZE)
+def legal_mask(board, radius: int = 1) -> np.ndarray:
+    mask = np.zeros(BOARD_SIZE * BOARD_SIZE, dtype=np.float32)
     for row, col in board.candidates(radius):
         mask[row * BOARD_SIZE + col] = 1.0
     return mask

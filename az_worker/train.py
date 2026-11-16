@@ -91,7 +91,11 @@ def main(argv: list[str] | None = None) -> int:
         dataset = TensorDataset.load(args.buffer_file, device, args.buffer)
         print(f"读取回放缓冲区: {len(dataset)} 个样本", flush=True)
     if args.teacher_data:
-        teacher = TensorDataset.load(args.teacher_data, device)
+        try:
+            teacher = TensorDataset.load(args.teacher_data, device)
+        except ValueError as error:
+            print(f"老师样本不可用: {error}", flush=True)
+            teacher = TensorDataset(device)
         if len(teacher):
             dataset.merge(teacher)
             print(

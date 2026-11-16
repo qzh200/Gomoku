@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import random
 import unittest
+from pathlib import Path
 
+import numpy as np
 import torch
 
 from az_worker.board import BLACK, WHITE, Board
 from az_worker.config import Settings
 from az_worker.engine import AlphaZeroEngine, EngineError
 from az_worker.features import (
+    PLANE_COUNT,
     PLANE_LAST,
     PLANE_OTHER,
+    PLANE_OTHER_FIVE,
+    PLANE_OTHER_OPEN_FOUR,
     PLANE_SELF,
+    PLANE_SELF_FIVE,
+    PLANE_SELF_OPEN_FOUR,
     TRANSFORMS,
     encode,
     legal_mask,
@@ -19,7 +26,7 @@ from az_worker.features import (
     transform_policy,
 )
 from az_worker.mcts import MCTS, Node, cell_of, row_col_of
-from az_worker.network import ACTION_COUNT, GomokuNet
+from az_worker.network import ACTION_COUNT, GomokuNet, load_model
 from az_worker.selfplay import Example, ReplayBuffer, SelfPlay, augment, train
 
 DEVICE = torch.device("cpu")
@@ -34,6 +41,21 @@ def board(stones: list[tuple[int, int, int]]) -> list[list[int]]:
 
 def small_model() -> GomokuNet:
     return GomokuNet(channels=8, blocks=1, value_hidden=8)
+
+
+def permute_cell(cell: tuple[int, int], index: int) -> tuple[int, int]:
+    forward, _ = TRANSFORMS[index]
+    row, col = divmod(forward(cell[0] * 15 + cell[1]), 15)
+    return row, col
+
+
+def permute_board(position: Board, index: int) -> Board:
+    forward, _ = TRANSFORMS[index]
+    grid = [[0] * 15 for _ in range(15)]
+    for row, col, stone in position.stones:
+        new_row, new_col = divmod(forward(row * 15 + col), 15)
+        grid[new_row][new_col] = stone
+    return Board(grid)
 
 
 class BoardTests(unittest.TestCase):
@@ -68,12 +90,48 @@ class FeatureTests(unittest.TestCase):
     def test_the_planes_follow_the_side_to_move(self) -> None:
         position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
         planes = encode(position, BLACK, (7, 8))
+        self.assertEqual(planes.shape, (PLANE_COUNT, 15, 15))
         self.assertEqual(planes[PLANE_SELF][7][7], 1.0)
         self.assertEqual(planes[PLANE_OTHER][7][8], 1.0)
         self.assertEqual(planes[PLANE_LAST][7][8], 1.0)
         swapped = encode(position, WHITE, (7, 8))
         self.assertEqual(swapped[PLANE_SELF][7][8], 1.0)
         self.assertEqual(swapped[PLANE_OTHER][7][7], 1.0)
+
+    def test_the_threat_planes_mark_the_winning_cells(self) -> None:
+        position = Board(
+            board([(7, 6, BLACK), (7, 7, BLACK), (7, 8, BLACK), (7, 9, BLACK)])
+        )
+        planes = encode(position, BLACK, None)
+        self.assertEqual(planes[PLANE_SELF_FIVE][7][5], 1.0)
+        self.assertEqual(planes[PLANE_SELF_FIVE][7][10], 1.0)
+        self.assertEqual(planes[PLANE_SELF_FIVE].sum(), 2.0)
+        self.assertEqual(planes[PLANE_OTHER_FIVE].sum(), 0.0)
+
+    def test_the_threat_planes_mark_the_opponent_winning_cells(self) -> None:
+        position = Board(
+            board([(7, 6, WHITE), (7, 7, WHITE), (7, 8, WHITE), (7, 9, WHITE)])
+        )
+        planes = encode(position, BLACK, None)
+        self.assertEqual(planes[PLANE_OTHER_FIVE][7][5], 1.0)
+        self.assertEqual(planes[PLANE_OTHER_FIVE][7][10], 1.0)
+        self.assertEqual(planes[PLANE_OTHER_FIVE].sum(), 2.0)
+        self.assertEqual(planes[PLANE_SELF_FIVE].sum(), 0.0)
+
+    def test_the_threat_planes_mark_the_open_fours(self) -> None:
+        position = Board(board([(7, 7, BLACK), (7, 8, BLACK), (7, 9, BLACK)]))
+        planes = encode(position, BLACK, None)
+        self.assertEqual(planes[PLANE_SELF_OPEN_FOUR][7][6], 1.0)
+        self.assertEqual(planes[PLANE_SELF_OPEN_FOUR][7][10], 1.0)
+        self.assertEqual(planes[PLANE_SELF_OPEN_FOUR].sum(), 2.0)
+        self.assertEqual(planes[PLANE_OTHER_OPEN_FOUR].sum(), 0.0)
+
+    def test_the_threat_planes_ignore_the_far_side(self) -> None:
+        position = Board(board([(7, 7, BLACK), (7, 8, BLACK), (7, 9, BLACK)]))
+        planes = encode(position, WHITE, None)
+        self.assertEqual(planes[PLANE_OTHER_OPEN_FOUR][7][6], 1.0)
+        self.assertEqual(planes[PLANE_OTHER_OPEN_FOUR][7][10], 1.0)
+        self.assertEqual(planes[PLANE_SELF_OPEN_FOUR].sum(), 0.0)
 
     def test_the_mask_marks_the_legal_cells(self) -> None:
         position = Board(board([(7, 7, BLACK)]))
@@ -90,12 +148,23 @@ class FeatureTests(unittest.TestCase):
             stones = sum(1 for plane in turned for row in plane for value in row if value)
             self.assertEqual(stones, 2, index)
 
+    def test_the_threat_planes_follow_the_symmetries(self) -> None:
+        position = Board(
+            board([(7, 6, BLACK), (7, 7, BLACK), (7, 9, BLACK), (8, 8, WHITE)])
+        )
+        planes = encode(position, BLACK, (7, 9))
+        for index in range(8):
+            turned = transform_planes(planes, index)
+            moved = permute_board(position, index)
+            expected = encode(moved, BLACK, permute_cell((7, 9), index))
+            np.testing.assert_allclose(turned, expected, err_msg=str(index))
+
     def test_the_policy_follows_the_symmetry(self) -> None:
-        policy = [0.0] * ACTION_COUNT
+        policy = np.zeros(ACTION_COUNT, dtype=np.float32)
         policy[cell_of(7, 7)] = 1.0
         turned = transform_policy(policy, 1)
-        self.assertEqual(sum(turned), 1.0)
-        self.assertEqual(turned.index(1.0), cell_of(7, 14 - 7))
+        self.assertAlmostEqual(float(turned.sum()), 1.0, places=5)
+        self.assertEqual(int(np.argmax(turned)), cell_of(7, 14 - 7))
 
     def test_the_eight_symmetries_are_different(self) -> None:
         images = {
@@ -309,30 +378,34 @@ class SelfPlayTests(unittest.TestCase):
 
     def test_the_augmentation_keeps_the_stones(self) -> None:
         position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
+        policy = np.zeros(ACTION_COUNT, dtype=np.float32)
+        policy[cell_of(7, 7)] = 1.0
         example = Example(
             planes=encode(position, BLACK, None),
-            policy=[0.0] * ACTION_COUNT,
+            policy=policy,
             legal=legal_mask(position, 2),
             value=1.0,
         )
-        example.policy[cell_of(7, 7)] = 1.0
         rng = random.Random(3)
         for _ in range(10):
             planes, policy, legal = augment(example, rng)
-            self.assertAlmostEqual(sum(policy), 1.0, places=5)
-            self.assertAlmostEqual(sum(legal), sum(example.legal), places=5)
+            self.assertAlmostEqual(float(policy.sum()), 1.0, places=5)
+            self.assertAlmostEqual(
+                float(legal.sum()), float(example.legal.sum()), places=5
+            )
 
     def test_the_training_lowers_the_loss(self) -> None:
         model = small_model()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
         position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
+        policy = np.zeros(ACTION_COUNT, dtype=np.float32)
+        policy[cell_of(7, 8)] = 1.0
         example = Example(
             planes=encode(position, BLACK, None),
-            policy=[0.0] * ACTION_COUNT,
+            policy=policy,
             legal=legal_mask(position, 2),
             value=1.0,
         )
-        example.policy[cell_of(7, 8)] = 1.0
         buffer = ReplayBuffer(capacity=10)
         for _ in range(20):
             buffer.add(example)
@@ -367,6 +440,99 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.candidate_width, 8)
         self.assertEqual(settings.time_budget, 1.5)
         self.assertEqual(settings.connection.engine_id, "az")
+
+
+class ThreatTests(unittest.TestCase):
+    """威胁平面必须和逐格枚举的结果一致。"""
+
+    DIRECTIONS = ((0, 1), (1, 0), (1, 1), (1, -1))
+
+    def _windows_through(self, row: int, col: int, dr: int, dc: int, length: int):
+        for offset in range(length):
+            start_row = row - offset * dr
+            start_col = col - offset * dc
+            cells = [(start_row + k * dr, start_col + k * dc) for k in range(length)]
+            if all(0 <= r < 15 and 0 <= c < 15 for r, c in cells):
+                yield cells
+
+    def _reference(self, board: Board, player: int) -> tuple[set, set, set, set]:
+        foe = WHITE if player == BLACK else BLACK
+        results = []
+        for side in (player, foe):
+            fives: set = set()
+            fours: set = set()
+            for row in range(15):
+                for col in range(15):
+                    if board.grid[row][col] != 0:
+                        continue
+                    grid = [line[:] for line in board.grid]
+                    grid[row][col] = side
+                    for dr, dc in self.DIRECTIONS:
+                        for cells in self._windows_through(row, col, dr, dc, 5):
+                            if all(grid[r][c] == side for r, c in cells):
+                                fives.add((row, col))
+                                break
+                        for cells in self._windows_through(row, col, dr, dc, 6):
+                            values = [grid[r][c] for r, c in cells]
+                            if values[0] == 0 and values[5] == 0:
+                                if all(v == side for v in values[1:5]):
+                                    fours.add((row, col))
+                                    break
+            results.append((fives, fours))
+        return results[0][0], results[1][0], results[0][1], results[1][1]
+
+    def test_the_threat_planes_match_a_plain_enumeration(self) -> None:
+        rng = random.Random(19)
+        for _ in range(6):
+            grid = [[0] * 15 for _ in range(15)]
+            cells = rng.sample(
+                [(r, c) for r in range(15) for c in range(15)], rng.randint(4, 45)
+            )
+            for row, col in cells:
+                grid[row][col] = rng.choice([BLACK, WHITE])
+            board = Board(grid)
+            for player in (BLACK, WHITE):
+                planes = encode(board, player, None)
+                self_five, other_five, self_four, other_four = self._reference(board, player)
+                self.assertEqual(
+                    {tuple(cell) for cell in np.argwhere(planes[PLANE_SELF_FIVE] > 0)},
+                    self_five,
+                )
+                self.assertEqual(
+                    {tuple(cell) for cell in np.argwhere(planes[PLANE_OTHER_FIVE] > 0)},
+                    other_five,
+                )
+                self.assertEqual(
+                    {tuple(cell) for cell in np.argwhere(planes[PLANE_SELF_OPEN_FOUR] > 0)},
+                    self_four,
+                )
+                self.assertEqual(
+                    {tuple(cell) for cell in np.argwhere(planes[PLANE_OTHER_OPEN_FOUR] > 0)},
+                    other_four,
+                )
+
+
+class CheckpointTests(unittest.TestCase):
+    def test_an_old_checkpoint_still_loads(self) -> None:
+        model = small_model()
+        state = dict(model.state_dict())
+        state["stem.weight"] = state["stem.weight"][:, :3].contiguous()
+        path = Path("models/az/test-old-planes.pt")
+        try:
+            torch.save(
+                {"state": state, "channels": 8, "blocks": 1, "value_hidden": 8}, path
+            )
+            loaded = load_model(str(path), DEVICE)
+            self.assertEqual(loaded.stem.weight.shape[1], PLANE_COUNT)
+            x = torch.zeros(1, PLANE_COUNT, 15, 15)
+            x[:, 0, 7, 7] = 1.0
+            model.eval()
+            loaded.eval()
+            self.assertTrue(
+                torch.allclose(model(x)[0], loaded(x)[0], atol=1e-5),
+            )
+        finally:
+            path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

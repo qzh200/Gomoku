@@ -3,26 +3,29 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
+import numpy as np
 import torch
 
-from .features import CELL_PERMUTATIONS
+from .features import CELL_PERMUTATIONS, PLANE_COUNT, as_planes
 from .selfplay import Example
 
 
-PERMUTATION_TABLE = torch.tensor(CELL_PERMUTATIONS, dtype=torch.long)
+PERMUTATION_TABLE = torch.from_numpy(np.stack(CELL_PERMUTATIONS).astype(np.int64))
 
 
 class TensorDataset:
     """训练数据全部放在显卡上，采样和对称增广也在显卡里做。
 
-    增广用同一个格子置换表：三个平面摊平成 225 格后，
+    增广用同一个格子置换表：每个平面摊平成 225 格后，
     八种对称变换都只是对格子的一个置换，策略和合法掩码同理。
     """
 
     def __init__(self, device: torch.device, capacity: int = 60_000) -> None:
         self.device = device
         self.capacity = max(1, capacity)
-        self.planes = torch.zeros((self.capacity, 3, 225), dtype=torch.float16, device=device)
+        self.planes = torch.zeros(
+            (self.capacity, PLANE_COUNT, 225), dtype=torch.float16, device=device
+        )
         self.policy = torch.zeros((self.capacity, 225), dtype=torch.float32, device=device)
         self.legal = torch.zeros((self.capacity, 225), dtype=torch.bool, device=device)
         self.value = torch.zeros((self.capacity,), dtype=torch.float32, device=device)
@@ -50,21 +53,17 @@ class TensorDataset:
             self.count -= overflow
         start = self.count
         end = start + len(examples)
-        planes = torch.tensor(
-            [example.planes for example in examples],
-            dtype=torch.float16,
-        ).reshape(len(examples), 3, 225)
-        policy = torch.tensor(
-            [example.policy for example in examples],
-            dtype=torch.float32,
+        planes = torch.from_numpy(
+            np.stack([as_planes(example.planes) for example in examples]).astype(np.float16)
+        ).reshape(len(examples), PLANE_COUNT, 225)
+        policy = torch.from_numpy(
+            np.stack([example.policy for example in examples]).astype(np.float32)
         )
-        legal = torch.tensor(
-            [example.legal for example in examples],
-            dtype=torch.bool,
+        legal = torch.from_numpy(
+            np.stack([example.legal for example in examples]) > 0.5
         )
-        value = torch.tensor(
-            [example.value for example in examples],
-            dtype=torch.float32,
+        value = torch.from_numpy(
+            np.array([example.value for example in examples], dtype=np.float32)
         )
         self.planes[start:end] = planes.to(self.device, non_blocking=True)
         self.policy[start:end] = policy.to(self.device, non_blocking=True)
@@ -125,10 +124,12 @@ class TensorDataset:
                 generator=generator,
             ).to(self.device)
             permutation = self.perm[kinds]
-            planes = torch.gather(planes, 2, permutation.unsqueeze(1).expand(-1, 3, -1))
+            planes = torch.gather(
+                planes, 2, permutation.unsqueeze(1).expand(-1, PLANE_COUNT, -1)
+            )
             policy = torch.gather(policy, 1, permutation)
             legal = torch.gather(legal, 1, permutation)
-        return planes.reshape(-1, 3, 15, 15), policy, legal, value
+        return planes.reshape(-1, PLANE_COUNT, 15, 15), policy, legal, value
 
     def save(self, path: str | Path) -> None:
         target = Path(path)
@@ -159,6 +160,11 @@ class TensorDataset:
             dataset.extend(payload)
             return dataset
         count = payload["planes"].shape[0]
+        if payload["planes"].shape[1] != PLANE_COUNT:
+            raise ValueError(
+                f"{source} 里的平面数是 {payload['planes'].shape[1]}，"
+                f"现在是 {PLANE_COUNT}，这份数据过期了，要重新采集"
+            )
         dataset = cls(device, capacity or max(count, 1))
         dataset.planes[:count] = payload["planes"].to(device)
         dataset.policy[:count] = payload["policy"].to(device)

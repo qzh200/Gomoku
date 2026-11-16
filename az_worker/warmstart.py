@@ -6,6 +6,7 @@ import random
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from .dataset import TensorDataset
@@ -191,12 +192,12 @@ def agreement_of(model: GomokuNet, examples: list[Example], device: torch.device
         batch = examples[start : start + 128]
         policies, _ = evaluate(
             model,
-            [example.planes for example in batch],
-            [example.legal for example in batch],
+            np.stack([example.planes for example in batch]),
+            np.stack([example.legal for example in batch]),
             device,
         )
         for policy, example in zip(policies, batch):
-            best = max(range(len(policy)), key=lambda cell: policy[cell])
+            best = int(np.argmax(policy))
             if example.teacher_cell >= 0 and best == example.teacher_cell:
                 matches += 1
     return matches / len(examples)

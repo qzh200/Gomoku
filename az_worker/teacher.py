@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
+
 from classical_worker.position import BLACK, Position, other
 from classical_worker.search import Searcher
 from classical_worker.threats import ordered_moves
@@ -15,8 +17,8 @@ VALUE_OUTCOME = "outcome"
 VALUE_EVAL = "eval"
 
 
-def teacher_policy(ranked: list[tuple[int, int]], decay: float) -> list[float]:
-    policy = [0.0] * (BOARD_SIZE * BOARD_SIZE)
+def teacher_policy(ranked: list[tuple[int, int]], decay: float) -> np.ndarray:
+    policy = np.zeros(BOARD_SIZE * BOARD_SIZE, dtype=np.float32)
     for index, (row, col) in enumerate(ranked):
         policy[row * BOARD_SIZE + col] = math.exp(-index / decay)
     return policy

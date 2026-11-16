@@ -4,6 +4,8 @@ import math
 import random
 import time
 
+import numpy as np
+
 from .board import BOARD_SIZE, Board, other
 from .features import encode, legal_mask
 from .network import ACTION_COUNT, evaluate
@@ -107,7 +109,7 @@ class SearchResult:
     def __init__(
         self,
         visits: dict[int, int],
-        policy: list[float],
+        policy: np.ndarray,
         root_value: float,
         simulations: int,
     ) -> None:
@@ -218,13 +220,13 @@ class MCTS:
         return self._collect(root)
 
 
-    def _evaluate(self, nodes: list[Node]) -> list[list[float]]:
+    def _evaluate(self, nodes: list[Node]) -> np.ndarray:
         planes = []
         masks = []
         for node in nodes:
             planes.append(encode(node.board, node.player, node.last_move))
             masks.append(legal_mask(node.board, self.candidate_radius))
-        policies, _ = evaluate(self.model, planes, masks, self.device)
+        policies, _ = evaluate(self.model, np.stack(planes), np.stack(masks), self.device)
         return policies
 
     def _flush(self, pending: list[tuple[Node, list[Node]]]) -> None:
@@ -235,7 +237,9 @@ class MCTS:
         for leaf, _ in pending:
             planes.append(encode(leaf.board, leaf.player, leaf.last_move))
             masks.append(legal_mask(leaf.board, self.candidate_radius))
-        policies, values = evaluate(self.model, planes, masks, self.device)
+        policies, values = evaluate(
+            self.model, np.stack(planes), np.stack(masks), self.device
+        )
 
         for (leaf, path), policy, value in zip(pending, policies, values):
             self._expand(leaf, policy)
@@ -333,7 +337,7 @@ class MCTS:
 
     def _collect(self, root: Node) -> SearchResult:
         visits: dict[int, int] = {}
-        policy = [0.0] * ACTION_COUNT
+        policy = np.zeros(ACTION_COUNT, dtype=np.float32)
         total = 0
         for move, child in root.children.items():
             visits[move] = child.visits
