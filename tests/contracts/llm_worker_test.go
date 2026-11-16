@@ -48,16 +48,29 @@ func stubOpenAI(t *testing.T) string {
 			http.Error(w, "读不出棋盘", http.StatusBadRequest)
 			return
 		}
-		answer := fmt.Sprintf(`{"choices":[{"message":{"content":"{\"row\":%d,\"col\":%d}"}}]}`, row, col)
+		// The worker asks in the coordinates of the board: a letter column
+		// and a row counted from one.
+		move := fmt.Sprintf("%c%d", 'A'+col, row+1)
+		body, err := json.Marshal(map[string]any{
+			"choices": []any{
+				map[string]any{"message": map[string]any{
+					"content": fmt.Sprintf(`{"move":"%s"}`, move),
+				}},
+			},
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(answer))
+		_, _ = w.Write(body)
 	})
 	return httptestServer(t, mux)
 }
 
 // stubMove reads the board of the prompt and returns the move the stub
 // engine plays: it wins at once when it can, otherwise it extends its own
-// longest line.
+// longest line, otherwise it plays the empty cell nearest to the stones.
 func stubMove(prompt string) (int, int, bool) {
 	mark := byte('X')
 	if strings.Contains(prompt, "当前执子方：白棋") {
@@ -77,14 +90,40 @@ func stubMove(prompt string) (int, int, bool) {
 	if row, col, ok := extendCell(grid, mark); ok {
 		return row, col, true
 	}
+	// The worker only accepts the cells it offered, so pick the empty cell
+	// nearest to a stone, then nearest to the center.
+	bestRow, bestCol, bestScore := -1, -1, 1<<30
 	for row := range 15 {
 		for col := range 15 {
-			if grid[row][col] == '.' {
-				return row, col, true
+			if grid[row][col] != '.' {
+				continue
+			}
+			nearest := 3
+			for dr := -2; dr <= 2; dr++ {
+				for dc := -2; dc <= 2; dc++ {
+					r, c := row+dr, col+dc
+					if r < 0 || r >= 15 || c < 0 || c >= 15 || grid[r][c] == '.' {
+						continue
+					}
+					if d := max(abs(dr), abs(dc)); d < nearest {
+						nearest = d
+					}
+				}
+			}
+			score := nearest*100 + abs(row-7) + abs(col-7)
+			if score < bestScore {
+				bestScore, bestRow, bestCol = score, row, col
 			}
 		}
 	}
-	return 0, 0, false
+	return bestRow, bestCol, bestRow >= 0
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // winningCell returns the cell that makes five in a row for the mark.
