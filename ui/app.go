@@ -20,13 +20,18 @@ type state struct {
 	modeIndex   int
 	engineIndex int
 	aiIsBlack   bool
-	gameID      string
-	ownerToken  string
-	game        *gomoku.Game
-	history     []gomoku.Move
-	status      string
-	notice      string
-	noticeKind  noticeKind
+	// firstEngineIndex and secondEngineIndex pick the engines of the two
+	// sides of an AI game; the first one takes the black stones.
+	firstEngineIndex  int
+	secondEngineIndex int
+
+	gameID     string
+	ownerToken string
+	game       *gomoku.Game
+	history    []gomoku.Move
+	status     string
+	notice     string
+	noticeKind noticeKind
 }
 
 // noticeKind tells how a notice is shown.
@@ -67,6 +72,10 @@ func New(games *application.GameService, moves *application.MoveService, registr
 		app.engines = append(app.engines, engineInfo{ID: engine.EngineID, Name: engine.DisplayName, Enabled: engine.Available})
 	}
 	app.st.status = "请选择模式并开始一局新棋"
+	if len(app.engines) > 1 {
+		// The second engine answers the first one by default.
+		app.st.secondEngineIndex = 1
+	}
 	return app
 }
 
@@ -130,15 +139,26 @@ func (a *App) EngineID() string {
 	return a.engines[a.st.engineIndex%len(a.engines)].ID
 }
 
-// otherEngineID returns the engine that is not the given one, so an AI game
-// uses both registered engines.
-func (a *App) otherEngineID(current string) string {
-	for _, engine := range a.engines {
-		if engine.ID != current && engine.Enabled {
-			return engine.ID
-		}
+// FirstEngineID returns the engine that takes the black stones and moves
+// first in an AI game.
+func (a *App) FirstEngineID() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.engines) == 0 {
+		return ""
 	}
-	return current
+	return a.engines[a.st.firstEngineIndex%len(a.engines)].ID
+}
+
+// SecondEngineID returns the engine that takes the white stones in an AI
+// game.
+func (a *App) SecondEngineID() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.engines) == 0 {
+		return ""
+	}
+	return a.engines[a.st.secondEngineIndex%len(a.engines)].ID
 }
 
 // newGame creates a game through the application service.
@@ -158,8 +178,8 @@ func (a *App) newGame() {
 		}
 		players[aiSide] = application.CreatePlayer{Type: gomoku.TypeAI, EngineID: engine, Config: map[string]any{}}
 	case gomoku.ModeAIVsAI:
-		players["black"] = application.CreatePlayer{Type: gomoku.TypeAI, EngineID: engine, Config: map[string]any{}}
-		players["white"] = application.CreatePlayer{Type: gomoku.TypeAI, EngineID: a.otherEngineID(engine), Config: map[string]any{}}
+		players["black"] = application.CreatePlayer{Type: gomoku.TypeAI, EngineID: a.FirstEngineID(), Config: map[string]any{}}
+		players["white"] = application.CreatePlayer{Type: gomoku.TypeAI, EngineID: a.SecondEngineID(), Config: map[string]any{}}
 	}
 	result, err := a.games.Create("", application.CreateGameRequest{Mode: mode, Players: players}, "")
 	if err != nil {

@@ -114,6 +114,32 @@ func TestAISidePickerChoosesTheSide(t *testing.T) {
 	}
 }
 
+// TestAIGameUsesTheChosenFirstEngine checks that an AI game gives the black
+// stones to the engine picked as the first mover.
+func TestAIGameUsesTheChosenFirstEngine(t *testing.T) {
+	app := newTestApp(t)
+	app.st.modeIndex = 1
+	app.st.firstEngineIndex = 1
+	app.st.secondEngineIndex = 0
+	app.newGame()
+
+	app.mu.Lock()
+	game := app.st.game
+	app.mu.Unlock()
+	if game == nil {
+		t.Fatalf("新棋局必须创建成功")
+	}
+	if game.Black().EngineName() != "llm" {
+		t.Fatalf("先手引擎必须执黑: %v", game.Black())
+	}
+	if game.White().EngineName() != "classical" {
+		t.Fatalf("后手引擎必须执白: %v", game.White())
+	}
+	if game.Current != gomoku.PlayerBlack {
+		t.Fatalf("黑棋必须先手")
+	}
+}
+
 // TestStartButtonStartsAGame clicks the button in the sidebar and checks that
 // a game starts.
 func TestStartButtonStartsAGame(t *testing.T) {
@@ -168,7 +194,7 @@ func TestHistoryShowsEveryMove(t *testing.T) {
 
 	texts := tester.Texts()
 	joined := strings.Join(texts, "|")
-	for _, want := range []string{"(7, 7)", "(7, 8)", "(6, 6)"} {
+	for _, want := range []string{"H8", "I8", "G7"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("落子记录必须显示坐标 %s, 实际 %v", want, texts)
 		}

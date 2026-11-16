@@ -24,6 +24,14 @@ const (
 	cardPadding   = 16.0
 )
 
+// The widths of the columns of the move table.
+const (
+	historyColumnGap   = 8.0
+	historyNumberWidth = 32.0
+	historyPlayerWidth = 60.0
+	historyPlaceWidth  = 44.0
+)
+
 // modeNames are the labels of the game modes.
 var modeNames = []string{"人机对战", "AI 对战", "人人对战"}
 
@@ -68,7 +76,7 @@ func (a *App) buildToolbarTitle(c *mygo.Context) {
 	game := a.st.game
 	a.mu.Unlock()
 	display.Icon(c, lucide.Grid3x3(), display.IconProps{Size: display.IconMiddle})
-	display.Text(c, "MyGo 五子棋", display.TextProps{Heading: 4})
+	display.Text(c, "五子棋", display.TextProps{Heading: 4})
 	if game == nil {
 		return
 	}
@@ -136,29 +144,81 @@ func (a *App) buildModePicker(c *mygo.Context) {
 	a.mu.Unlock()
 }
 
-// buildEnginePicker lets the user pick the engine of the AI side.
+// buildEnginePicker lets the user pick the engines of the game. A human
+// game picks the side and the engine of the AI; an AI game picks the engine
+// that moves first and the engine that answers.
 func (a *App) buildEnginePicker(c *mygo.Context) {
 	a.mu.Lock()
-	index := a.st.engineIndex
 	mode := modeValues[a.st.modeIndex]
 	a.mu.Unlock()
-	if mode == gomoku.ModeHumanVsHuman {
+	switch mode {
+	case gomoku.ModeHumanVsHuman:
 		return
+	case gomoku.ModeHumanVsAI:
+		a.buildAISidePicker(c, mode)
+		a.buildSingleEnginePicker(c, "AI 引擎", func() int {
+			a.mu.Lock()
+			defer a.mu.Unlock()
+			return a.st.engineIndex
+		}, func(index int) {
+			a.mu.Lock()
+			defer a.mu.Unlock()
+			a.st.engineIndex = index
+		})
+	default:
+		a.buildAIEnginePickers(c)
 	}
-	a.buildAISidePicker(c, mode)
-	display.Text(c, "AI 引擎", display.TextProps{Type: display.TextSecondary, FontSize: 12})
-	if len(a.engines) == 0 {
+}
+
+// buildSingleEnginePicker shows one picker of the engines and stores the
+// chosen index.
+func (a *App) buildSingleEnginePicker(c *mygo.Context, label string, current func() int, store func(int)) {
+	display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: 12})
+	names := a.engineNames()
+	if len(names) == 0 {
 		display.Text(c, "没有可用引擎", display.TextProps{Type: display.TextDanger})
 		return
 	}
+	index := current() % len(names)
+	action.Segmented(c, &index, names, action.SegmentedProps{Block: true})
+	store(index % len(names))
+}
+
+// buildAIEnginePickers shows the pickers of an AI game: the engine that
+// moves first takes the black stones, the other one takes the white stones.
+func (a *App) buildAIEnginePickers(c *mygo.Context) {
+	names := a.engineNames()
+	if len(names) == 0 {
+		display.Text(c, "没有可用引擎", display.TextProps{Type: display.TextDanger})
+		return
+	}
+	a.mu.Lock()
+	first := a.st.firstEngineIndex % len(names)
+	second := a.st.secondEngineIndex % len(names)
+	a.mu.Unlock()
+
+	display.Text(c, "先手（黑方）", display.TextProps{Type: display.TextSecondary, FontSize: 12})
+	action.Segmented(c, &first, names, action.SegmentedProps{Block: true})
+	display.Text(c, "后手（白方）", display.TextProps{Type: display.TextSecondary, FontSize: 12})
+	action.Segmented(c, &second, names, action.SegmentedProps{Block: true})
+
+	// The two sides must not play with the same engine.
+	if first == second && len(names) > 1 {
+		second = (first + 1) % len(names)
+	}
+	a.mu.Lock()
+	a.st.firstEngineIndex = first
+	a.st.secondEngineIndex = second
+	a.mu.Unlock()
+}
+
+// engineNames returns the names of the registered engines.
+func (a *App) engineNames() []string {
 	names := make([]string, 0, len(a.engines))
 	for _, engine := range a.engines {
 		names = append(names, engine.Name)
 	}
-	action.Segmented(c, &index, names, action.SegmentedProps{Block: true})
-	a.mu.Lock()
-	a.st.engineIndex = index % len(a.engines)
-	a.mu.Unlock()
+	return names
 }
 
 // buildAISidePicker lets the user pick the side the AI plays in a human game.
@@ -342,9 +402,9 @@ func boardSizeFor(width, height float32) float32 {
 	return size
 }
 
-// buildHistory lists the moves of the current game. The list is virtualized,
-// so a long game scrolls instead of overflowing the window, and it follows
-// the last move as the game goes on.
+// buildHistory lists the moves of the current game as a table. The list is
+// virtualized, so a long game scrolls instead of overflowing the window, and
+// it follows the last move as the game goes on.
 func (a *App) buildHistory(c *mygo.Context, tk *theme.Tokens) {
 	a.mu.Lock()
 	history := a.st.history
@@ -360,6 +420,7 @@ func (a *App) buildHistory(c *mygo.Context, tk *theme.Tokens) {
 				display.Text(c, "还没有落子", display.TextProps{Type: display.TextSecondary, FontSize: 13})
 				return
 			}
+			a.buildHistoryHeader(c)
 			a.list.FollowEnd = true
 			last := game != nil && game.LastMove != nil
 			mygo.List(c, &a.list, len(history), func(i int) {
@@ -369,21 +430,49 @@ func (a *App) buildHistory(c *mygo.Context, tk *theme.Tokens) {
 	})
 }
 
+// buildHistoryHeader shows the names of the columns of the move table.
+func (a *App) buildHistoryHeader(c *mygo.Context) {
+	mygo.Column(c).Gap(6).Children(func() {
+		mygo.Row(c).Gap(historyColumnGap).AlignItems(mygo.Center).Padding(0, 6).Children(func() {
+			historyCell(c, historyNumberWidth, "序号", display.TextProps{Type: display.TextSecondary, FontSize: 12})
+			historyCell(c, historyPlayerWidth, "棋手", display.TextProps{Type: display.TextSecondary, FontSize: 12})
+			historyCell(c, historyPlaceWidth, "位置", display.TextProps{Type: display.TextSecondary, FontSize: 12})
+		})
+		layout.Divider(c, layout.DividerProps{})
+	})
+}
+
 // buildHistoryRow shows one move: its number, the color of its stone and
 // where it was played.
 func (a *App) buildHistoryRow(c *mygo.Context, move gomoku.Move, last bool, tk *theme.Tokens) {
-	row := mygo.Row(c).Gap(8).AlignItems(mygo.Center).Padding(3, 6).Radius(6).Children(func() {
-		a.buildStoneDot(c, move.Player, tk)
-		display.Text(c, fmt.Sprintf("%d", move.Number), display.TextProps{Type: display.TextSecondary, FontSize: 12})
-		display.Text(c, fmt.Sprintf("(%d, %d)", move.Row, move.Col), display.TextProps{FontSize: 13})
-		mygo.Spacer(c).Grow(1).Basis(0)
-		if last {
-			display.Text(c, "最新", display.TextProps{Type: display.TextSecondary, FontSize: 11})
-		}
+	row := mygo.Row(c).Gap(historyColumnGap).AlignItems(mygo.Center).Padding(3, 6).Radius(6).Children(func() {
+		historyCell(c, historyNumberWidth, fmt.Sprintf("%d", move.Number),
+			display.TextProps{Type: display.TextSecondary, FontSize: 12})
+		player := mygo.Row(c).Gap(6).AlignItems(mygo.Center).Children(func() {
+			a.buildStoneDot(c, move.Player, tk)
+			display.Text(c, playerLabel(move.Player), display.TextProps{FontSize: 13})
+		})
+		player.Width(historyPlayerWidth)
+		historyCell(c, historyPlaceWidth, placeLabel(move.Row, move.Col), display.TextProps{FontSize: 13})
 	})
 	if last {
 		row.Background(tk.FillSecondary)
 	}
+}
+
+// historyCell shows one value of a row of the move table.
+func historyCell(c *mygo.Context, width float32, text string, props display.TextProps) {
+	cell := display.Text(c, text, props)
+	cell.Width(width)
+}
+
+// placeLabel names a cell the way the board labels it: the letter of the
+// column and the number of the row.
+func placeLabel(row, col int) string {
+	if row < 0 || row >= len(rowLabels) || col < 0 || col >= len(columnLabels) {
+		return "-"
+	}
+	return columnLabels[col] + rowLabels[row]
 }
 
 // buildStoneDot draws the stone of a move. The white stone has a border, so

@@ -32,7 +32,7 @@ func TestInterfaceDrawsBoardAndCreatesGame(t *testing.T) {
 	tester := mygoui.NewTester(app.View(), 1180, 800)
 	tester.Advance(100 * time.Millisecond)
 
-	if !tester.HasText("MyGo 五子棋") {
+	if !tester.HasText("五子棋") {
 		t.Fatalf("界面必须显示标题, 实际文本: %v", tester.Texts())
 	}
 	if !tester.HasText("开始新棋局") {

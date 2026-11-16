@@ -104,7 +104,7 @@ func run(addr string) error {
 	app := ui.New(gameService, moveService, registry)
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:           "MyGo 五子棋",
+			Title:           "五子棋",
 			Width:           1180,
 			Height:          800,
 			MinWidth:        960,
