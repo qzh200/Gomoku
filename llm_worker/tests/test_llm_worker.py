@@ -12,7 +12,8 @@ import unittest
 from pathlib import Path
 
 from llm_worker import board
-from llm_worker.config import ConfigError, Settings, parse_dotenv, read_runtime_token
+from aiworker.settings import ConfigError, parse_dotenv, read_runtime_token
+from llm_worker.config import Settings
 from llm_worker.engine import EngineError, LLMEngine
 from llm_worker.openai_client import APIError, Answer, ChatMessage, OpenAIClient
 

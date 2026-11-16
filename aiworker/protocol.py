@@ -1,8 +1,12 @@
-"""The worker: it plays the turns the server hands out.
+"""The protocol of the MyGo workers, shared by every engine.
 
-The worker long polls for a turn, asks the engine for a move and submits it.
-It renews the lease while the model thinks, so a slow model does not lose
-its turn.
+The module plays the turns the server hands out: it long polls for a turn,
+keeps the lease alive while the engine thinks, submits the move and drops a
+result that came too late.
+
+An engine only has to answer one question: where does the stone go. The
+protocol, the leases and the credentials stay here, so an engine is written
+and tested without a server.
 """
 
 from __future__ import annotations
@@ -13,13 +17,26 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from typing import Any
-
-from .engine import LLMEngine
+from typing import Any, Protocol
 
 
 class WorkerError(RuntimeError):
     """The server refused a request of the worker."""
+
+
+class Engine(Protocol):
+    """What the protocol needs from an engine."""
+
+    def choose_move(
+        self,
+        board: list[list[int]],
+        history: list[dict],
+        player: int,
+        last_move: dict | None = None,
+        config: dict | None = None,
+    ) -> tuple[int, int]:
+        """Return the row and the column of the move to play."""
+        ...
 
 
 class Claim:
@@ -44,7 +61,7 @@ class Claim:
 
 
 class MyGoClient:
-    """The client of the MyGo API the worker talks to."""
+    """The client of the MyGo API a worker talks to."""
 
     def __init__(self, base_url: str, token: str) -> None:
         self.base_url = base_url.rstrip("/")
@@ -125,9 +142,9 @@ class MyGoClient:
 
 
 class LeaseKeeper:
-    """Renews the lease of a turn while the model thinks.
+    """Renews the lease of a turn while the engine thinks.
 
-    The renewal runs in a thread, so a long answer does not lose the turn.
+    The renewal runs in a thread, so a long search does not lose the turn.
     """
 
     def __init__(self, client: MyGoClient, claim_id: str, extend_seconds: int) -> None:
@@ -163,7 +180,7 @@ class Worker:
     def __init__(
         self,
         client: MyGoClient,
-        engine: LLMEngine,
+        engine: Engine,
         worker_id: str,
         wait_seconds: int = 20,
         extend_seconds: int = 120,
@@ -175,8 +192,8 @@ class Worker:
         self.worker_id = worker_id
         self.wait_seconds = wait_seconds
         self.extend_seconds = extend_seconds
-        # The delay after a failure grows, so a broken model service is not
-        # asked over and over.
+        # The delay after a failure grows, so a broken engine is not asked
+        # over and over.
         self.backoff = backoff
         self.max_backoff = max_backoff
 
@@ -184,8 +201,7 @@ class Worker:
         """Poll for turns until the process is stopped.
 
         A failure does not stop the worker, but it does slow it down: the
-        same turn would be handed out again right away, and a broken model
-        service would be asked over and over.
+        same turn would be handed out again right away.
         """
         print(f"[{self.worker_id}] 开始轮询 {self.client.base_url}", flush=True)
         failures = 0

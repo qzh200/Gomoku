@@ -10,10 +10,14 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .config import ConfigError, Settings, dotenv_candidates, load_dotenv
+from aiworker import ConfigError, MyGoClient, Worker, load_dotenv, worker_dotenv_candidates
+
+from .config import Settings
 from .engine import LLMEngine
 from .openai_client import OpenAIClient
-from .worker import MyGoClient, Worker
+
+# The name of the package, used to find its .env file.
+PACKAGE = "llm_worker"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Read the parameters and play the turns until the process is stopped."""
     args = build_parser().parse_args(argv)
-    for candidate in dotenv_candidates(args.env_file):
+    for candidate in worker_dotenv_candidates(PACKAGE, args.env_file):
         load_dotenv(candidate)
         if candidate.is_file():
             print(f"参数文件: {candidate}", flush=True)
