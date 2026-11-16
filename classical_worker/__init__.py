@@ -1,14 +1,16 @@
-"""The classical engine of MyGo: negamax, alpha-beta and a greedy ordering.
+"""The classical engine of MyGo: threat search, PVS and a transposition table.
 
 The package holds no protocol and no network code: it reads a board and
 answers a cell.
 
 The parts are separate on purpose:
 
-* ``position`` keeps the board and the score of its runs, and plays and takes
-  back stones;
-* ``search`` is the negamax search with alpha-beta pruning and the greedy
-  move ordering;
+* ``patterns`` scores six-cell windows and knows the Gomoku shapes;
+* ``position`` keeps the board, its window score and its Zobrist hash, and
+  plays and takes back stones;
+* ``threats`` classifies threats, produces forced moves and runs VCF/VCT;
+* ``tt`` is the transposition table;
+* ``search`` is the iterative deepening principal variation search;
 * ``engine`` turns the board of a turn into a move;
 * ``config`` reads the parameters of the search from the environment.
 

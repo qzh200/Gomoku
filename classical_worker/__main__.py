@@ -21,7 +21,7 @@ PACKAGE = "classical_worker"
 
 def build_parser() -> argparse.ArgumentParser:
     """Return the parser of the command line."""
-    parser = argparse.ArgumentParser(description="MyGo 传统算法 Worker（negamax + alpha-beta）")
+    parser = argparse.ArgumentParser(description="MyGo 传统算法 Worker（窗口棋型 + PVS + VCF）")
     parser.add_argument(
         "--env-file",
         default=None,
@@ -53,6 +53,9 @@ def main(argv: list[str] | None = None) -> int:
         depth=settings.depth,
         width=settings.width,
         time_budget=settings.time_budget,
+        vcf_budget=settings.vcf_budget,
+        vct_budget=settings.vct_budget,
+        tt_entries=settings.tt_entries,
     )
     worker = Worker(
         MyGoClient(settings.connection.mygo_url, settings.connection.engine_token),

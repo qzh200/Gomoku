@@ -68,21 +68,21 @@ python mock_worker/mock_worker.py --engine classical --token <engine_token>
 
 ## 传统算法引擎
 
-`classical_worker/` 是 `classical` 引擎：不用模型，靠搜索。**negamax + alpha-beta
-剪枝 + 贪心排序**，逐层加深，单手约 0.2–0.7 秒。
+`classical_worker/` 是 `classical` 引擎：不用模型，靠搜索。**6 格窗口棋型表 +
+威胁强制着 + 置换表 PVS + VCF**，逐层加深，单手默认最多 2 秒。
 
 ```sh
 go run ./cmd/app                  # 先起 MyGo，它写令牌
 python -m classical_worker
 ```
 
-- 评分按连子算（长度 × 开口数），落子/撤销时增量更新；
-- 贪心排序决定先看哪些点，是 alpha-beta 能剪枝的前提；
-- 搜索前先做两条直判：能连五就连五，对手要连五就堵。
+- 评分按 6 格窗口查表，落子/撤销只更新穿过该点的 24 个窗口；
+- 候选点按「成五 / 双四 / 四三 / 双三 / 冲四 / 活三」排序，强制着先走；
+- 置换表让不同顺序到达的局面共享结论，VCF 在根节点找连续冲四的必胜；
+- 对冻结的第一代 20 局基准（0.2 秒/手）14 胜 6 负，平均 0.126 秒。
 
 算法细节、评分表与参数见 [`docs/classical-engine.md`](docs/classical-engine.md)。
-第二代设计（窗口棋型表、威胁强制着、置换表 PVS、VCF/VCT）见
-[`docs/classical-engine-v2.md`](docs/classical-engine-v2.md)。
+设计决策与分阶段验收见 [`docs/classical-engine-v2.md`](docs/classical-engine-v2.md)。
 
 ## LLM 引擎
 
