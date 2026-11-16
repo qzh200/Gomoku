@@ -127,18 +127,47 @@ class BoardTests(unittest.TestCase):
         self.assertIsNone(board.parse_coordinate("没有坐标"))
 
     def test_parses_a_json_move(self) -> None:
-        self.assertEqual(board.parse_move('好的：{"row": 7, "col": 8}'), (7, 8))
+        self.assertEqual(board.parse_move('好的：{"move": "H8"}'), (7, 7))
+        self.assertEqual(board.parse_move('{"move": "M5"}'), (4, 12))
         self.assertEqual(board.parse_move("H8"), (7, 7))
         self.assertIsNone(board.parse_move("我不知道"))
+
+    def test_reads_numbers_as_the_labels_of_the_board(self) -> None:
+        # M5 on the board is the row 5 and the column 13, so it is the cell
+        # (4, 12) of the API.
+        self.assertEqual(board.parse_move('{"row": 5, "col": 13}'), (4, 12))
+        self.assertEqual(board.parse_move('{"row": 1, "col": 1}'), (0, 0))
+        # Out of the labels, the numbers are the 0-based indexes of the API.
+        self.assertEqual(board.parse_move('{"row": 0, "col": 0}'), (0, 0))
+        self.assertIsNone(board.parse_move('{"row": 16, "col": 16}'))
+
+    def test_ignores_the_reasoning_prose(self) -> None:
+        self.assertIsNone(board.parse_move_strict("对手在 M8 有子，我下 I9"))
+        self.assertEqual(board.parse_move_strict('{"move": "I9"}'), (8, 8))
+
+    def test_offers_the_empty_cells_next_to_the_stones(self) -> None:
+        state = empty_board()
+        state[7][7] = board.BLACK
+        cells = board.candidates(state)
+        self.assertNotIn((7, 7), cells)
+        self.assertIn((7, 6), cells)
+        self.assertIn((8, 8), cells)
+        # A far corner is not worth offering.
+        self.assertNotIn((0, 0), cells)
+        # The cells next to a stone come before the ones further out.
+        self.assertIn((7, 6), cells[:8])
+
+    def test_offers_the_center_on_an_empty_board(self) -> None:
+        self.assertEqual(board.candidates(empty_board()), [(7, 7)])
 
 
 class EngineTests(unittest.TestCase):
     def test_takes_the_move_of_the_model(self) -> None:
-        client = FakeClient(['{"row": 7, "col": 8}'])
+        client = FakeClient(['{"move": "H8"}'])
         engine = LLMEngine(client)
         state = empty_board()
         move = engine.choose_move(state, [], board.BLACK)
-        self.assertEqual(move, (7, 8))
+        self.assertEqual(move, (7, 7))
         self.assertEqual(len(client.calls), 1)
         system = client.calls[0][0]
         self.assertEqual(system.role, "system")
@@ -147,11 +176,13 @@ class EngineTests(unittest.TestCase):
     def test_asks_again_when_the_cell_is_taken(self) -> None:
         state = empty_board()
         state[3][3] = board.WHITE
-        client = FakeClient(['{"row": 3, "col": 3}', '{"row": 4, "col": 4}'])
+        client = FakeClient(['{"move": "D4"}', '{"move": "E5"}'])
         engine = LLMEngine(client, max_attempts=2)
         self.assertEqual(engine.choose_move(state, [], board.BLACK), (4, 4))
         self.assertEqual(len(client.calls), 2)
-        self.assertIn("已有棋子", client.calls[1][-1].content)
+        problem = client.calls[1][-1].content
+        self.assertIn("D4", problem)
+        self.assertIn("已有棋子", problem)
 
     def test_gives_up_when_no_answer_is_playable(self) -> None:
         client = FakeClient(["不知道", "还是不知道"])
@@ -262,9 +293,9 @@ class SettingsTokenTests(unittest.TestCase):
 
 class EngineReasoningTests(unittest.TestCase):
     def test_takes_the_json_out_of_the_reasoning(self) -> None:
-        client = FakeClient([('先看看棋盘 {"row": 7, "col": 8}', True)])
+        client = FakeClient([('先看看棋盘 {"move": "H8"}', True)])
         engine = LLMEngine(client)
-        self.assertEqual(engine.choose_move(empty_board(), [], board.BLACK), (7, 8))
+        self.assertEqual(engine.choose_move(empty_board(), [], board.BLACK), (7, 7))
 
     def test_does_not_read_a_coordinate_from_the_reasoning(self) -> None:
         client = FakeClient([("O 在 H8，下一步可能下在 I9", True)])
