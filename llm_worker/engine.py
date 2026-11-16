@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 
 from . import board
-from .openai_client import APIError, ChatMessage, OpenAIClient
+from .openai_client import Answer, ChatMessage, OpenAIClient
 
 # The system prompt tells the model the rules of the game and the shape of
 # the answer. The board in the user message carries the position.
@@ -46,22 +46,36 @@ class LLMEngine:
         """Return the row and the column of the move the model picked."""
         messages = self._messages(board_state, history, player, last_move, config)
         problem = ""
-        for attempt in range(self.max_attempts):
+        for _ in range(self.max_attempts):
             answer = self.client.complete(messages)
-            move = board.parse_move(answer)
+            move = self._move_of(answer, board_state)
             if move is None:
                 problem = "回答里没有可解析的落点，请只输出 JSON。"
-                messages.append(ChatMessage("assistant", answer))
+                messages.append(ChatMessage("assistant", answer.text))
                 messages.append(ChatMessage("user", problem))
                 continue
             row, col = move
             if not board.is_empty(board_state, row, col):
                 problem = INVALID_MOVE_HINT
-                messages.append(ChatMessage("assistant", answer))
+                messages.append(ChatMessage("assistant", answer.text))
                 messages.append(ChatMessage("user", problem))
                 continue
             return row, col
         raise EngineError(problem or "模型没有给出合法落点")
+
+    def _move_of(self, answer: "Answer", board_state: list[list[int]]) -> tuple[int, int] | None:
+        """Read the move out of the answer of the model.
+
+        A reasoning model that ran out of tokens answers in its reasoning
+        text, where a coordinate may be mentioned in passing. Only a JSON
+        object is trusted there; the plain content may also be a coordinate.
+        """
+        if answer.from_reasoning:
+            row, col = board.parse_json_move(answer.text)
+            if row is None or col is None:
+                return None
+            return row, col
+        return board.parse_move(answer.text)
 
     def _messages(
         self,

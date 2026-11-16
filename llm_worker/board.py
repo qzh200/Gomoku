@@ -6,6 +6,7 @@ apart from the model client, so the engine can be tested without a network.
 
 from __future__ import annotations
 
+import json
 import re
 
 # The size of the board and the labels of its lines.
@@ -107,16 +108,19 @@ def parse_move(text: str) -> tuple[int, int] | None:
     The answer is a JSON object with the row and the column of the cell, in
     the 0-based numbers of the API, or a coordinate of the board labels.
     """
-    row, col = _parse_json_move(text)
+    row, col = parse_json_move(text)
     if row is not None and col is not None:
         return row, col
     return parse_coordinate(text)
 
 
-def _parse_json_move(text: str) -> tuple[int | None, int | None]:
-    """Read the row and the column of a JSON answer."""
-    import json
+def parse_json_move(text: str) -> tuple[int | None, int | None]:
+    """Read the row and the column of a JSON answer.
 
+    The answer may carry prose around the object, so the object is taken out
+    of the text first. None is returned when there is no JSON object with a
+    row and a column.
+    """
     start = text.find("{")
     end = text.rfind("}")
     if start < 0 or end <= start:

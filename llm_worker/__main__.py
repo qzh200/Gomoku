@@ -53,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         temperature=settings.temperature,
         max_tokens=settings.max_tokens,
         timeout=settings.timeout,
+        disable_thinking=settings.disable_thinking,
     )
     engine = LLMEngine(client, max_attempts=settings.max_attempts)
     worker = Worker(

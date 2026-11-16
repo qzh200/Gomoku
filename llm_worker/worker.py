@@ -167,24 +167,46 @@ class Worker:
         worker_id: str,
         wait_seconds: int = 20,
         extend_seconds: int = 120,
+        backoff: float = 2.0,
+        max_backoff: float = 60.0,
     ) -> None:
         self.client = client
         self.engine = engine
         self.worker_id = worker_id
         self.wait_seconds = wait_seconds
         self.extend_seconds = extend_seconds
+        # The delay after a failure grows, so a broken model service is not
+        # asked over and over.
+        self.backoff = backoff
+        self.max_backoff = max_backoff
 
     def run(self) -> None:
-        """Poll for turns until the process is stopped."""
+        """Poll for turns until the process is stopped.
+
+        A failure does not stop the worker, but it does slow it down: the
+        same turn would be handed out again right away, and a broken model
+        service would be asked over and over.
+        """
         print(f"[{self.worker_id}] 开始轮询 {self.client.base_url}", flush=True)
+        failures = 0
         while True:
             try:
-                self.play_turn()
+                played = self.play_turn()
             except KeyboardInterrupt:
                 raise
             except Exception as error:  # noqa: BLE001 - the loop must survive
-                print(f"[{self.worker_id}] 本轮失败: {error}", flush=True)
-                time.sleep(2)
+                failures += 1
+                delay = min(self.max_backoff, self.backoff * failures)
+                print(
+                    f"[{self.worker_id}] 本轮失败: {error}；{delay:.0f} 秒后重试",
+                    flush=True,
+                )
+                time.sleep(delay)
+                continue
+            if played:
+                failures = 0
+            else:
+                time.sleep(self.backoff)
 
     def play_turn(self) -> bool:
         """Play one turn. False means there was no turn to play."""

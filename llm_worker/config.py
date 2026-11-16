@@ -7,6 +7,7 @@ of in the command line.
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,7 +18,7 @@ DEFAULT_MYGO_URL = "http://127.0.0.1:8080/api/v1"
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
 DEFAULT_TEMPERATURE = 0.2
-DEFAULT_MAX_TOKENS = 200
+DEFAULT_MAX_TOKENS = 2000
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_WAIT_SECONDS = 20
 DEFAULT_EXTEND_SECONDS = 120
@@ -26,7 +27,9 @@ DEFAULT_ATTEMPTS = 2
 # The names of the environment variables of every setting.
 ENV_MYGO_URL = "MYGO_URL"
 ENV_ENGINE_TOKEN = "MYGO_ENGINE_TOKEN"
+ENV_ENGINE_ID = "MYGO_ENGINE_ID"
 ENV_WORKER_ID = "MYGO_WORKER_ID"
+ENV_RUNTIME_CONFIG = "MYGO_RUNTIME_CONFIG"
 ENV_BASE_URL = "OPENAI_BASE_URL"
 ENV_API_KEY = "OPENAI_API_KEY"
 ENV_MODEL = "OPENAI_MODEL"
@@ -36,6 +39,11 @@ ENV_TIMEOUT = "OPENAI_TIMEOUT"
 ENV_WAIT_SECONDS = "MYGO_WAIT_SECONDS"
 ENV_EXTEND_SECONDS = "MYGO_LEASE_EXTEND_SECONDS"
 ENV_ATTEMPTS = "OPENAI_MAX_ATTEMPTS"
+ENV_DISABLE_THINKING = "OPENAI_DISABLE_THINKING"
+
+# The engine this worker plays for, and the file MyGo writes the tokens to.
+DEFAULT_ENGINE_ID = "llm"
+DEFAULT_RUNTIME_CONFIG = "configs/engines.runtime.json"
 
 
 class ConfigError(RuntimeError):
@@ -90,12 +98,58 @@ def dotenv_candidates(explicit: str | None) -> list[Path]:
     return [here / ".env", here.parent / ".env", Path.cwd() / ".env"]
 
 
+def runtime_config_candidates(explicit: str | None = None) -> list[Path]:
+    """Return the files MyGo writes the engine tokens to, in order."""
+    if explicit:
+        return [Path(explicit)]
+    here = Path(__file__).resolve().parent
+    return [
+        here.parent / DEFAULT_RUNTIME_CONFIG,
+        Path.cwd() / DEFAULT_RUNTIME_CONFIG,
+    ]
+
+
+def read_runtime_token(path: Path, engine_id: str) -> str:
+    """Read the bearer token of an engine from the runtime registry.
+
+    MyGo writes that file when it starts, so the worker learns its token
+    without anybody copying it. An empty string means the file holds no token
+    for the engine.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    engines = payload.get("engines")
+    if not isinstance(engines, list):
+        return ""
+    for engine in engines:
+        if not isinstance(engine, dict):
+            continue
+        if engine.get("engine_id") != engine_id:
+            continue
+        token = engine.get("token")
+        if isinstance(token, str) and token.strip():
+            return token.strip()
+    return ""
+
+
+def find_engine_token(engine_id: str, explicit: str | None = None) -> str:
+    """Return the token of the engine, from the runtime registry."""
+    for candidate in runtime_config_candidates(explicit):
+        token = read_runtime_token(candidate, engine_id)
+        if token:
+            return token
+    return ""
+
+
 @dataclass(frozen=True)
 class Settings:
     """The parameters of one LLM worker."""
 
     mygo_url: str
     engine_token: str
+    engine_id: str
     worker_id: str
     base_url: str
     api_key: str
@@ -106,6 +160,7 @@ class Settings:
     wait_seconds: int
     extend_seconds: int
     max_attempts: int
+    disable_thinking: bool
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -134,10 +189,22 @@ class Settings:
             except ValueError as error:
                 raise ConfigError(f"环境变量 {name} 不是整数: {raw!r}") from error
 
+        def flag(name: str) -> bool:
+            return text(name, "").lower() in ("1", "true", "yes", "on")
+
+        engine_id = text(ENV_ENGINE_ID, DEFAULT_ENGINE_ID)
         token = source.get(ENV_ENGINE_TOKEN, "").strip()
         if not token:
+            # The token comes from the file MyGo wrote when it started.
+            token = find_engine_token(
+                engine_id,
+                source.get(ENV_RUNTIME_CONFIG, "").strip() or None,
+            )
+        if not token:
             raise ConfigError(
-                f"缺少 {ENV_ENGINE_TOKEN}：它是 llm 引擎的 Bearer Token，见 configs/engines.json"
+                f"拿不到 {engine_id} 引擎的 Bearer Token："
+                f"先启动 MyGo（它会写 {DEFAULT_RUNTIME_CONFIG}），"
+                f"或直接设置 {ENV_ENGINE_TOKEN}"
             )
         api_key = source.get(ENV_API_KEY, "").strip()
         if not api_key:
@@ -146,7 +213,8 @@ class Settings:
         return cls(
             mygo_url=text(ENV_MYGO_URL, DEFAULT_MYGO_URL).rstrip("/"),
             engine_token=token,
-            worker_id=text(ENV_WORKER_ID, "llm-worker-01"),
+            engine_id=engine_id,
+            worker_id=text(ENV_WORKER_ID, f"{engine_id}-worker-01"),
             base_url=text(ENV_BASE_URL, DEFAULT_BASE_URL).rstrip("/"),
             api_key=api_key,
             model=text(ENV_MODEL, DEFAULT_MODEL),
@@ -156,4 +224,5 @@ class Settings:
             wait_seconds=integer(ENV_WAIT_SECONDS, DEFAULT_WAIT_SECONDS),
             extend_seconds=integer(ENV_EXTEND_SECONDS, DEFAULT_EXTEND_SECONDS),
             max_attempts=integer(ENV_ATTEMPTS, DEFAULT_ATTEMPTS),
+            disable_thinking=flag(ENV_DISABLE_THINKING),
         )

@@ -7,26 +7,34 @@ The tests run with the standard library only:
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from llm_worker import board
-from llm_worker.config import ConfigError, Settings, parse_dotenv
+from llm_worker.config import ConfigError, Settings, parse_dotenv, read_runtime_token
 from llm_worker.engine import EngineError, LLMEngine
-from llm_worker.openai_client import APIError, ChatMessage, OpenAIClient
+from llm_worker.openai_client import APIError, Answer, ChatMessage, OpenAIClient
 
 
 class FakeClient:
-    """A model client that answers with a fixed list of answers."""
+    """A model client that answers with a fixed list of answers.
 
-    def __init__(self, answers: list[str]) -> None:
+    An answer given as a tuple marks the text as the reasoning of a model.
+    """
+
+    def __init__(self, answers: list[str | tuple[str, bool]]) -> None:
         self.answers = list(answers)
         self.calls: list[list[ChatMessage]] = []
 
-    def complete(self, messages: list[ChatMessage]) -> str:
+    def complete(self, messages: list[ChatMessage]) -> Answer:
         self.calls.append(messages)
         if not self.answers:
             raise APIError("没有更多回答")
-        return self.answers.pop(0)
+        answer = self.answers.pop(0)
+        if isinstance(answer, tuple):
+            return Answer(answer[0], from_reasoning=answer[1])
+        return Answer(answer)
 
 
 def empty_board() -> list[list[int]]:
@@ -78,8 +86,16 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.worker_id, "llm-worker-01")
 
     def test_reports_a_missing_token(self) -> None:
-        with self.assertRaises(ConfigError):
-            Settings.from_env({"OPENAI_API_KEY": "key"})
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "engines.runtime.json"
+            path.write_text(json.dumps({"engines": []}), encoding="utf-8")
+            with self.assertRaises(ConfigError):
+                Settings.from_env(
+                    {
+                        "MYGO_RUNTIME_CONFIG": str(path),
+                        "OPENAI_API_KEY": "key",
+                    }
+                )
 
     def test_reports_a_number_that_is_not_a_number(self) -> None:
         with self.assertRaises(ConfigError):
@@ -148,12 +164,113 @@ class OpenAIClientTests(unittest.TestCase):
     def test_reads_the_content_of_the_first_choice(self) -> None:
         client = OpenAIClient("http://127.0.0.1:1/v1", "key", "model")
         body = json.dumps({"choices": [{"message": {"content": " hi "}}]}).encode("utf-8")
-        self.assertEqual(client._content_of(body), "hi")
+        answer = client._content_of(body)
+        self.assertEqual(answer.text, "hi")
+        self.assertFalse(answer.from_reasoning)
+
+    def test_falls_back_to_the_reasoning_of_the_model(self) -> None:
+        client = OpenAIClient("http://127.0.0.1:1/v1", "key", "model")
+        body = json.dumps(
+            {"choices": [{"message": {"content": "", "reasoning_content": "思考"}}]}
+        ).encode("utf-8")
+        answer = client._content_of(body)
+        self.assertEqual(answer.text, "思考")
+        self.assertTrue(answer.from_reasoning)
+
+    def test_reports_an_empty_answer_that_ran_out_of_tokens(self) -> None:
+        client = OpenAIClient("http://127.0.0.1:1/v1", "key", "model")
+        body = json.dumps(
+            {"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}
+        ).encode("utf-8")
+        with self.assertRaises(APIError) as caught:
+            client._content_of(body)
+        self.assertIn("OPENAI_MAX_TOKENS", str(caught.exception))
 
     def test_reports_an_answer_without_choices(self) -> None:
         client = OpenAIClient("http://127.0.0.1:1/v1", "key", "model")
         with self.assertRaises(APIError):
             client._content_of(b'{"choices": []}')
+
+
+class RuntimeTokenTests(unittest.TestCase):
+    def test_reads_the_token_of_the_engine(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "engines.runtime.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "engines": [
+                            {"engine_id": "classical", "token": "c-token"},
+                            {"engine_id": "llm", "token": "l-token"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(read_runtime_token(path, "llm"), "l-token")
+            self.assertEqual(read_runtime_token(path, "classical"), "c-token")
+            self.assertEqual(read_runtime_token(path, "other"), "")
+
+    def test_reports_a_missing_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "missing.json"
+            self.assertEqual(read_runtime_token(path, "llm"), "")
+
+
+class SettingsTokenTests(unittest.TestCase):
+    def test_takes_the_token_from_the_environment(self) -> None:
+        settings = Settings.from_env(
+            {
+                "MYGO_ENGINE_TOKEN": "token",
+                "OPENAI_API_KEY": "key",
+                "OPENAI_DISABLE_THINKING": "1",
+            }
+        )
+        self.assertEqual(settings.engine_token, "token")
+        self.assertEqual(settings.engine_id, "llm")
+        self.assertEqual(settings.worker_id, "llm-worker-01")
+        self.assertTrue(settings.disable_thinking)
+
+    def test_takes_the_token_from_the_runtime_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "engines.runtime.json"
+            path.write_text(
+                json.dumps({"engines": [{"engine_id": "llm", "token": "file-token"}]}),
+                encoding="utf-8",
+            )
+            settings = Settings.from_env(
+                {
+                    "MYGO_RUNTIME_CONFIG": str(path),
+                    "OPENAI_API_KEY": "key",
+                }
+            )
+            self.assertEqual(settings.engine_token, "file-token")
+
+    def test_reports_a_token_it_cannot_find(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "engines.runtime.json"
+            path.write_text(json.dumps({"engines": []}), encoding="utf-8")
+            with self.assertRaises(ConfigError) as caught:
+                Settings.from_env(
+                    {
+                        "MYGO_RUNTIME_CONFIG": str(path),
+                        "OPENAI_API_KEY": "key",
+                    }
+                )
+            self.assertIn("MYGO_ENGINE_TOKEN", str(caught.exception))
+
+
+class EngineReasoningTests(unittest.TestCase):
+    def test_takes_the_json_out_of_the_reasoning(self) -> None:
+        client = FakeClient([('先看看棋盘 {"row": 7, "col": 8}', True)])
+        engine = LLMEngine(client)
+        self.assertEqual(engine.choose_move(empty_board(), [], board.BLACK), (7, 8))
+
+    def test_does_not_read_a_coordinate_from_the_reasoning(self) -> None:
+        client = FakeClient([("O 在 H8，下一步可能下在 I9", True)])
+        engine = LLMEngine(client, max_attempts=1)
+        with self.assertRaises(EngineError):
+            engine.choose_move(empty_board(), [], board.BLACK)
 
 
 if __name__ == "__main__":
