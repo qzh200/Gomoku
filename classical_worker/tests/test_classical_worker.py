@@ -1,9 +1,3 @@
-"""Tests of the second-generation classical engine.
-
-The tests run with the standard library only:
-    python -m unittest discover -s classical_worker/tests -t .
-"""
-
 from __future__ import annotations
 
 import random
@@ -19,7 +13,6 @@ from classical_worker.tt import MATE_SCORE, EXACT, LOWER, SIDE_KEY, Transpositio
 
 
 def board(stones: list[tuple[int, int, int]]) -> list[list[int]]:
-    """Return a 15x15 board with the given stones."""
     grid = [[0] * 15 for _ in range(15)]
     for row, col, player in stones:
         grid[row][col] = player
@@ -27,7 +20,6 @@ def board(stones: list[tuple[int, int, int]]) -> list[list[int]]:
 
 
 def empty() -> list[list[int]]:
-    """Return an empty board."""
     return [[0] * 15 for _ in range(15)]
 
 
@@ -123,7 +115,6 @@ class PositionTests(unittest.TestCase):
         self.assertIn((7, 9), position.neighbours(radius=2))
 
     def test_puts_the_block_of_a_four_first(self) -> None:
-        # White has H8 I8 J8 K8; a black stone at L8 or G8 is the only defence.
         position = Position(
             board([(7, 7, WHITE), (7, 8, WHITE), (7, 9, WHITE), (7, 10, WHITE), (8, 8, BLACK)])
         )
@@ -241,8 +232,6 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(position.grid[move[0]][move[1]], 0)
 
     def test_finds_a_vcf_win(self) -> None:
-        # Black has a three and a four: the four forces the block, the three
-        # then makes an open four on the other line.
         position = Position(
             board(
                 [
@@ -291,7 +280,6 @@ def _plain_negamax(
     ply: int,
     counted: list[int] | None = None,
 ) -> int:
-    """A negamax without pruning, to compare the pruned one with."""
     if counted is not None:
         counted[0] += 1
     if depth <= 0:
@@ -321,7 +309,6 @@ def _plain_root(
     width: int,
     counted: list[int] | None = None,
 ) -> int:
-    """The value of the best move, without alpha-beta pruning."""
     best = -INFINITY
     for move in forced_moves(position, player, width * 2):
         undo = position.play(*move, player)

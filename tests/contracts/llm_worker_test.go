@@ -13,12 +13,8 @@ import (
 	"time"
 )
 
-// boardLine matches one row of the board the worker sends to the model.
 var boardLine = regexp.MustCompile(`(?m)^(\d{2}) ((?:[.XO] ){14}[.XO])$`)
 
-// stubOpenAI starts a server that speaks the OpenAI chat completions
-// protocol. It reads the board out of the prompt and answers with a legal
-// move, so the worker can play a whole game against the real API.
 func stubOpenAI(t *testing.T) string {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -48,8 +44,7 @@ func stubOpenAI(t *testing.T) string {
 			http.Error(w, "读不出棋盘", http.StatusBadRequest)
 			return
 		}
-		// The worker asks in the coordinates of the board: a letter column
-		// and a row counted from one.
+
 		move := fmt.Sprintf("%c%d", 'A'+col, row+1)
 		body, err := json.Marshal(map[string]any{
 			"choices": []any{
@@ -68,9 +63,6 @@ func stubOpenAI(t *testing.T) string {
 	return httptestServer(t, mux)
 }
 
-// stubMove reads the board of the prompt and returns the move the stub
-// engine plays: it wins at once when it can, otherwise it extends its own
-// longest line, otherwise it plays the empty cell nearest to the stones.
 func stubMove(prompt string) (int, int, bool) {
 	mark := byte('X')
 	if strings.Contains(prompt, "当前执子方：白棋") {
@@ -90,8 +82,7 @@ func stubMove(prompt string) (int, int, bool) {
 	if row, col, ok := extendCell(grid, mark); ok {
 		return row, col, true
 	}
-	// The worker only accepts the cells it offered, so pick the empty cell
-	// nearest to a stone, then nearest to the center.
+
 	bestRow, bestCol, bestScore := -1, -1, 1<<30
 	for row := range 15 {
 		for col := range 15 {
@@ -126,7 +117,6 @@ func abs(v int) int {
 	return v
 }
 
-// winningCell returns the cell that makes five in a row for the mark.
 func winningCell(grid [15][15]byte, mark byte) (int, int, bool) {
 	directions := [][2]int{{0, 1}, {1, 0}, {1, 1}, {1, -1}}
 	for row := range 15 {
@@ -153,7 +143,6 @@ func winningCell(grid [15][15]byte, mark byte) (int, int, bool) {
 	return 0, 0, false
 }
 
-// extendCell returns the cell that extends the longest own line.
 func extendCell(grid [15][15]byte, mark byte) (int, int, bool) {
 	directions := [][2]int{{0, 1}, {1, 0}, {1, 1}, {1, -1}}
 	bestLength := 0
@@ -184,8 +173,6 @@ func extendCell(grid [15][15]byte, mark byte) (int, int, bool) {
 	return bestRow, bestCol, bestRow >= 0
 }
 
-// TestLLMWorkerFinishesAGame runs the Python LLM worker against the real
-// API and a stub model service, and checks that the game reaches its end.
 func TestLLMWorkerFinishesAGame(t *testing.T) {
 	python, err := exec.LookPath("python")
 	if err != nil {
@@ -199,7 +186,6 @@ func TestLLMWorkerFinishesAGame(t *testing.T) {
 	h.createGame("ai_vs_ai", aiVsAIPlayers())
 	model := stubOpenAI(t)
 
-	// The classical engine plays the other side, so the game can end.
 	classical := exec.Command(python, filepath.Join("..", "..", "mock_worker", "mock_worker.py"),
 		"--url", h.server.URL+"/api/v1",
 		"--engine", "classical",

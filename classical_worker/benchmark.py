@@ -1,12 +1,3 @@
-"""A self-play benchmark: the second generation against the first.
-
-Usage:
-    python -m classical_worker.benchmark --games 20 --budget 0.05
-
-The first generation is frozen under ``tests/fixtures``; it is only imported
-by this script, never by the worker.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -18,8 +9,7 @@ from .search import Searcher
 from .tests.fixtures.v1_position import Position as V1Position
 from .tests.fixtures.v1_search import Searcher as V1Searcher
 
-# The eight openings after the centre stone. A fixed table keeps the games
-# reproducible except for the time budget.
+
 OPENINGS = ((0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1))
 
 
@@ -30,7 +20,6 @@ def play_game(
     vcf_budget: float = 0.10,
     vct_budget: float = 0.0,
 ) -> tuple[int, int, list[float], list[int]]:
-    """Play one game and return the winner, move count, v2 times and depths."""
     position = Position()
     centre = (7, 7)
     first = position.play(*centre, BLACK)
@@ -76,7 +65,6 @@ def benchmark(
     vcf_budget: float = 0.10,
     vct_budget: float = 0.0,
 ) -> dict[str, float]:
-    """Play the games and return the aggregate numbers."""
     wins = 0
     losses = 0
     draws = 0
@@ -116,7 +104,6 @@ def benchmark(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the benchmark and print one line per number."""
     parser = argparse.ArgumentParser(description="第二代传统算法对第一代的自对弈基准")
     parser.add_argument("--games", type=int, default=20)
     parser.add_argument("--budget", type=float, default=0.05)

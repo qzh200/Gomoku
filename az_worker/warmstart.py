@@ -1,24 +1,3 @@
-"""The warm start: teaching the network what the classical engine knows.
-
-Pure self-play needs thousands of games before the network sees a double
-three, and until then the search plays noise. The classical engine already
-knows the shapes, so it is used as a teacher: it plays both sides of the
-games, and every position it comes across becomes a training example. The
-move it searched for is the policy target, its evaluation the value target.
-
-Both targets mean the same thing as in self-play: the policy is the
-distribution over the moves, the value is the expected result of the game
-for the side to move. The evaluation of the classical engine is an estimate
-of that result, so the value head starts with the shapes it knows instead of
-guessing.
-
-After the warm start the network goes back to self-play, and the training
-only improves on what it already has.
-
-Usage:
-    python -m az_worker.warmstart --games 100 --model models/az/warmstart.pt
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -37,7 +16,7 @@ from .features import encode, legal_mask
 from .network import GomokuNet, evaluate, load_model, save, train_batch
 from .selfplay import Example, augment
 
-# The defaults of the warm start.
+
 DEFAULT_GAMES = 100
 DEFAULT_DEPTH = 4
 DEFAULT_WIDTH = 12
@@ -46,29 +25,22 @@ DEFAULT_CHANNELS = 64
 DEFAULT_BLOCKS = 6
 DEFAULT_MODEL = "models/az/warmstart.pt"
 
-# The number of ranked moves of the teacher that get a weight.
+
 DEFAULT_TEACHER_MOVES = 8
 
-# How fast the weight of the ranked moves falls off. The first move gets the
-# weight one, the second a bit less, and so on.
+
 DEFAULT_DECAY = 2.0
 
-# The score of the classical engine that maps to a value of one. The
-# evaluation of a quiet position is around ten thousand, so the value of a
-# normal position stays well inside the range of the network.
+
 DEFAULT_SCORE_SCALE = 8000.0
 
-# The two things the value head can be taught.
-# The result of the game is what self-play teaches, so it is the default:
-# a value head that is taught one thing and then another loses its
-# calibration at the switch.
+
 VALUE_OUTCOME = "outcome"
 VALUE_EVAL = "eval"
 DEFAULT_VALUE_TARGET = VALUE_OUTCOME
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser of the command line."""
     parser = argparse.ArgumentParser(description="用传统引擎当老师，预热神经网络")
     parser.add_argument("--games", type=int, default=DEFAULT_GAMES, help="棋局数")
     parser.add_argument("--depth", type=int, default=DEFAULT_DEPTH, help="传统引擎的搜索深度")
@@ -92,12 +64,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def teacher_policy(ranked: list[tuple[int, int]], decay: float) -> list[float]:
-    """Return the policy of the ranked moves of the teacher.
-
-    The teacher ranks the moves it considered; the first one gets the weight
-    one and the next ones less. A soft target says more than a single move:
-    it also tells the network that the second best move is nearly as good.
-    """
     policy = [0.0] * (BOARD_SIZE * BOARD_SIZE)
     for index, (row, col) in enumerate(ranked):
         policy[row * BOARD_SIZE + col] = math.exp(-index / decay)
@@ -114,17 +80,6 @@ def collect_examples(
     score_scale: float = DEFAULT_SCORE_SCALE,
     value_target: str = VALUE_OUTCOME,
 ) -> list[Example]:
-    """Play the games with the classical engine and return their examples.
-
-    The value target is the result of the game, the same thing self-play
-    teaches. Using the result of the game in both phases matters: a value
-    head that is first taught the evaluation of the classical engine and then
-    the result of the game loses its calibration at the switch.
-
-    With ``--value-target eval`` the value is the evaluation of the classical
-    engine instead. That gives a denser signal at the start, but the value
-    head has to relearn its scale when self-play takes over.
-    """
     searcher = Searcher(depth=depth, width=width, time_budget=time_budget)
     examples: list[Example] = []
     for _ in range(games):
@@ -138,8 +93,8 @@ def collect_examples(
             move = searcher.best_move(position, player)
             if move is None:
                 break
-            # The ranked moves are the ones the search considered, the best
-            # one first. They are the target of the policy.
+
+
             ranked = ordered_moves(position, player, teacher_moves)
             if ranked and ranked[0] != move:
                 ranked = [move] + [cell for cell in ranked if cell != move]
@@ -164,9 +119,6 @@ def collect_examples(
             position.play(row, col, player)
             player = other(player)
         if value_target == VALUE_OUTCOME:
-            # The value of a position is seen from the side of the player to
-            # move there: the winner gets one and the loser minus one. Black
-            # moves first in every game, so the side to move alternates.
             for index, example in enumerate(examples[start:]):
                 mover = BLACK if index % 2 == 0 else WHITE
                 if winner is None:
@@ -177,7 +129,6 @@ def collect_examples(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Generate the data and write the weights of the warm start."""
     args = build_parser().parse_args(argv)
     rng = random.Random(args.seed)
     torch.manual_seed(args.seed if args.seed is not None else 0)
@@ -201,8 +152,8 @@ def main(argv: list[str] | None = None) -> int:
         args.score_scale,
         args.value_target,
     )
-    # The last games are kept out of the training: they say how much the
-    # network really learned instead of how much it memorised.
+
+
     held_out = max(1, len(examples) // 10)
     validation = examples[-held_out:]
     examples = examples[:-held_out]
@@ -225,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
         values = []
         for index in indexes:
             example = examples[index]
-            # The eight symmetries of the board multiply the data.
+
             item_planes, item_policy, item_legal = augment(example, rng)
             planes.append(item_planes)
             policies.append(item_policy)
@@ -259,11 +210,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def agreement_of(model: GomokuNet, examples: list[Example], device: torch.device) -> float:
-    """Return the share of the examples where the network plays the teacher's move.
-
-    Only the first move of the teacher counts: the network has to name the
-    same cell, not merely a cell the teacher also considered.
-    """
     if not examples:
         return 0.0
     matches = 0

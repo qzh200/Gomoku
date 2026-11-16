@@ -8,7 +8,6 @@ import (
 	"mygo/internal/scheduler"
 )
 
-// Claim is a lease with the state the worker needs to decide the turn.
 type Claim struct {
 	ClaimID   string         `json:"claim_id"`
 	TurnID    string         `json:"turn_id"`
@@ -22,22 +21,18 @@ type Claim struct {
 	Config    map[string]any `json:"config"`
 }
 
-// ClaimService owns the AI turn claiming use cases.
 type ClaimService struct {
 	coord *Coordinator
 	queue *scheduler.Queue
 	ttl   time.Duration
 }
 
-// ClaimServiceOption configures a claim service.
 type ClaimServiceOption func(*ClaimService)
 
-// LeaseTTL sets the lifetime of a fresh lease.
 func LeaseTTL(ttl time.Duration) ClaimServiceOption {
 	return func(s *ClaimService) { s.ttl = ttl }
 }
 
-// NewClaimService builds a claim service.
 func NewClaimService(coord *Coordinator, options ...ClaimServiceOption) *ClaimService {
 	service := &ClaimService{coord: coord, ttl: scheduler.DefaultLeaseSeconds * time.Second}
 	for _, option := range options {
@@ -47,8 +42,6 @@ func NewClaimService(coord *Coordinator, options ...ClaimServiceOption) *ClaimSe
 	return service
 }
 
-// Claim waits for a turn of the given engine and leases it. It reports false
-// when the wait window ended without a task.
 func (s *ClaimService) Claim(ctx context.Context, engineID, workerID string, wait time.Duration) (*Claim, bool, error) {
 	deadline := time.Now().Add(wait)
 	for {
@@ -69,8 +62,6 @@ func (s *ClaimService) Claim(ctx context.Context, engineID, workerID string, wai
 	}
 }
 
-// tryClaim asks the scheduler for the next turn of the engine and loads the
-// state of the game it belongs to.
 func (s *ClaimService) tryClaim(engineID, workerID string) (*Claim, bool, error) {
 	s.coord.Lock()
 	defer s.coord.Unlock()
@@ -98,8 +89,6 @@ func (s *ClaimService) tryClaim(engineID, workerID string) (*Claim, bool, error)
 	}, true, nil
 }
 
-// wait blocks until the coordinator signals a change, the context is done or
-// the remaining time is over. It never holds the coordinator lock.
 func (s *ClaimService) wait(ctx context.Context, remaining time.Duration) error {
 	s.coord.Lock()
 	signal := s.coord.WaitChannel()
@@ -117,7 +106,6 @@ func (s *ClaimService) wait(ctx context.Context, remaining time.Duration) error 
 	}
 }
 
-// Renew extends the lease of a claim.
 func (s *ClaimService) Renew(claimID, engineID string, extendSeconds int) (*scheduler.Lease, error) {
 	s.coord.Lock()
 	defer s.coord.Unlock()
@@ -128,7 +116,6 @@ func (s *ClaimService) Renew(claimID, engineID string, extendSeconds int) (*sche
 	return lease, nil
 }
 
-// Release drops the lease of a claim.
 func (s *ClaimService) Release(claimID, engineID string) error {
 	s.coord.Lock()
 	defer s.coord.Unlock()
@@ -139,7 +126,6 @@ func (s *ClaimService) Release(claimID, engineID string) error {
 	return nil
 }
 
-// mapLeaseError maps a lease error to an application error.
 func mapLeaseError(err error) error {
 	switch err {
 	case scheduler.ErrClaimNotFound:

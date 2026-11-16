@@ -9,11 +9,6 @@ import (
 	"time"
 )
 
-// TestAZWorkerFinishesAGame runs the real AlphaZero worker for both sides of
-// an AI game and checks that the game reaches its end.
-//
-// The worker needs PyTorch, so the test uses the virtual environment of the
-// project and is skipped when it is missing.
 func TestAZWorkerFinishesAGame(t *testing.T) {
 	root := filepath.Join("..", "..")
 	absolute, err := filepath.Abs(root)

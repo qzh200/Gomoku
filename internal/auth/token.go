@@ -1,5 +1,3 @@
-// Package auth handles the identities of the local interface, the AI engines
-// and the owners of a game.
 package auth
 
 import (
@@ -14,30 +12,25 @@ import (
 	"time"
 )
 
-// Errors returned by the registry.
 var (
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrForbidden    = errors.New("forbidden")
 )
 
-// Engine is one registered AI engine.
 type Engine struct {
 	EngineID string
-	// DisplayName is the name shown in the interface.
+
 	DisplayName string
-	// TokenHash is the stored form of the bearer token.
+
 	TokenHash string
-	// Token is the plain bearer token. It stays in memory and is shown in the
-	// startup banner when it was generated, so a worker can be configured
-	// with it.
+
 	Token string
-	// Generated marks a token that was created at startup.
+
 	Generated    bool
 	Available    bool
 	LastActiveAt *time.Time
 }
 
-// EngineConfig is one entry of the engine configuration file.
 type EngineConfig struct {
 	EngineID    string `json:"engine_id"`
 	DisplayName string `json:"display_name"`
@@ -45,13 +38,11 @@ type EngineConfig struct {
 	Available   *bool  `json:"available"`
 }
 
-// Config is the content of the engine configuration file.
 type Config struct {
 	Engines          []EngineConfig `json:"engines"`
 	LocalClientToken string         `json:"local_client_token"`
 }
 
-// Registry holds the engine registry and the local client token.
 type Registry struct {
 	mu         sync.RWMutex
 	engines    map[string]*Engine
@@ -60,8 +51,6 @@ type Registry struct {
 	localToken string
 }
 
-// NewRegistry builds a registry from a configuration. Engines without a token
-// and the local client token without a token get a random one.
 func NewRegistry(cfg Config) (*Registry, error) {
 	r := &Registry{
 		engines: make(map[string]*Engine, len(cfg.Engines)),
@@ -108,11 +97,8 @@ func NewRegistry(cfg Config) (*Registry, error) {
 	return r, nil
 }
 
-// LocalToken returns the plaintext local client token. The startup banner
-// shows it once so the local interface can authenticate.
 func (r *Registry) LocalToken() string { return r.localToken }
 
-// Engines returns a copy of the engine registry, ordered by engine id.
 func (r *Registry) Engines() []*Engine {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -125,7 +111,6 @@ func (r *Registry) Engines() []*Engine {
 	return out
 }
 
-// EngineByID returns the engine with the given id.
 func (r *Registry) EngineByID(engineID string) (*Engine, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -137,8 +122,6 @@ func (r *Registry) EngineByID(engineID string) (*Engine, bool) {
 	return &copied, true
 }
 
-// EngineByToken resolves the engine that owns a bearer token. The engine is
-// derived from the credential, never from a request parameter.
 func (r *Registry) EngineByToken(token string) (*Engine, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -150,14 +133,12 @@ func (r *Registry) EngineByToken(token string) (*Engine, bool) {
 	return &copied, true
 }
 
-// IsLocalClient reports whether the token is the local client token.
 func (r *Registry) IsLocalClient(token string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.localHash == HashToken(token)
 }
 
-// Touch records the activity of an engine.
 func (r *Registry) Touch(engineID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -167,13 +148,11 @@ func (r *Registry) Touch(engineID string) {
 	}
 }
 
-// HashToken returns the stored form of a token.
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
 
-// RandomToken returns a random token.
 func RandomToken() string {
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
@@ -182,7 +161,6 @@ func RandomToken() string {
 	return hex.EncodeToString(buf)
 }
 
-// BearerToken extracts the token of an Authorization header.
 func BearerToken(header string) string {
 	const prefix = "Bearer "
 	if len(header) <= len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {

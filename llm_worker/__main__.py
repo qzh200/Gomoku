@@ -1,10 +1,3 @@
-"""The entry point of the LLM worker.
-
-Usage:
-    python -m llm_worker
-    python -m llm_worker --env-file llm_worker/.env
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -16,12 +9,11 @@ from .config import Settings
 from .engine import LLMEngine
 from .openai_client import OpenAIClient
 
-# The name of the package, used to find its .env file.
+
 PACKAGE = "llm_worker"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser of the command line."""
     parser = argparse.ArgumentParser(description="MyGo LLM 引擎 Worker")
     parser.add_argument(
         "--env-file",
@@ -32,7 +24,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Read the parameters and play the turns until the process is stopped."""
     args = build_parser().parse_args(argv)
     for candidate in worker_dotenv_candidates(PACKAGE, args.env_file):
         load_dotenv(candidate)

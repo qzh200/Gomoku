@@ -8,7 +8,6 @@ import (
 	"mygo/internal/application"
 )
 
-// errorBody is the frozen error envelope.
 type errorBody struct {
 	Error errorDetail `json:"error"`
 }
@@ -18,7 +17,6 @@ type errorDetail struct {
 	Message string `json:"message"`
 }
 
-// statusFor maps an error code to its HTTP status.
 var statusFor = map[string]int{
 	application.CodeInvalidRequest:     http.StatusBadRequest,
 	application.CodeUnauthorized:       http.StatusUnauthorized,
@@ -38,7 +36,6 @@ var statusFor = map[string]int{
 	application.CodeInternalError:      http.StatusInternalServerError,
 }
 
-// writeError writes the frozen error envelope for an application error.
 func writeError(w http.ResponseWriter, err error) {
 	var appErr *application.Error
 	if !errors.As(err, &appErr) {
@@ -51,7 +48,6 @@ func writeError(w http.ResponseWriter, err error) {
 	writeJSON(w, status, errorBody{Error: errorDetail{Code: appErr.Code, Message: appErr.Message}})
 }
 
-// writeJSON writes a JSON response.
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)

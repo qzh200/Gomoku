@@ -1,14 +1,3 @@
-"""The protocol of the MyGo workers, shared by every engine.
-
-The module plays the turns the server hands out: it long polls for a turn,
-keeps the lease alive while the engine thinks, submits the move and drops a
-result that came too late.
-
-An engine only has to answer one question: where does the stone go. The
-protocol, the leases and the credentials stay here, so an engine is written
-and tested without a server.
-"""
-
 from __future__ import annotations
 
 import json
@@ -21,12 +10,10 @@ from typing import Any, Protocol
 
 
 class WorkerError(RuntimeError):
-    """The server refused a request of the worker."""
+    pass
 
 
 class Engine(Protocol):
-    """What the protocol needs from an engine."""
-
     def choose_move(
         self,
         board: list[list[int]],
@@ -35,13 +22,10 @@ class Engine(Protocol):
         last_move: dict | None = None,
         config: dict | None = None,
     ) -> tuple[int, int]:
-        """Return the row and the column of the move to play."""
         ...
 
 
 class Claim:
-    """One turn of a game, handed out by the server."""
-
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload
         self.claim_id: str = payload["claim_id"]
@@ -56,13 +40,10 @@ class Claim:
 
     @property
     def expires_at(self) -> str:
-        """The time the lease runs out, as the server wrote it."""
         return self.payload.get("expires_at", "")
 
 
 class MyGoClient:
-    """The client of the MyGo API a worker talks to."""
-
     def __init__(self, base_url: str, token: str) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
@@ -75,7 +56,6 @@ class MyGoClient:
         headers: dict[str, str] | None = None,
         timeout: float = 180.0,
     ) -> tuple[int, bytes]:
-        """Send one request and return the status and the body."""
         data = json.dumps(body).encode("utf-8") if body is not None else None
         request = urllib.request.Request(f"{self.base_url}{path}", data=data, method=method)
         if data is not None:
@@ -90,7 +70,6 @@ class MyGoClient:
             return error.code, error.read()
 
     def claim(self, worker_id: str, wait_seconds: int) -> Claim | None:
-        """Long poll for a turn. None means there was no turn to play."""
         status, body = self.request(
             "POST",
             "/ai/turn-claims",
@@ -103,7 +82,6 @@ class MyGoClient:
         return Claim(json.loads(body))
 
     def renew(self, claim_id: str, extend_seconds: int) -> bool:
-        """Extend the lease of a turn."""
         status, body = self.request(
             "PATCH",
             f"/ai/turn-claims/{claim_id}",
@@ -114,7 +92,6 @@ class MyGoClient:
         return True
 
     def release(self, claim_id: str) -> None:
-        """Give the turn back to the server."""
         self.request("DELETE", f"/ai/turn-claims/{claim_id}")
 
     def submit_move(
@@ -126,7 +103,6 @@ class MyGoClient:
         claim_id: str,
         idempotency_key: str,
     ) -> tuple[int, bytes]:
-        """Play a move. The status tells whether the server took it."""
         return self.request(
             "POST",
             f"/games/{game_id}/moves",
@@ -142,11 +118,6 @@ class MyGoClient:
 
 
 class LeaseKeeper:
-    """Renews the lease of a turn while the engine thinks.
-
-    The renewal runs in a thread, so a long search does not lose the turn.
-    """
-
     def __init__(self, client: MyGoClient, claim_id: str, extend_seconds: int) -> None:
         self.client = client
         self.claim_id = claim_id
@@ -165,7 +136,6 @@ class LeaseKeeper:
             self._thread.join(timeout=2)
 
     def _run(self) -> None:
-        """Renew the lease until the turn is over."""
         interval = max(5.0, self.extend_seconds / 3)
         while not self._stop.wait(interval):
             try:
@@ -175,8 +145,6 @@ class LeaseKeeper:
 
 
 class Worker:
-    """Plays the turns of the games the server hands out."""
-
     def __init__(
         self,
         client: MyGoClient,
@@ -192,17 +160,12 @@ class Worker:
         self.worker_id = worker_id
         self.wait_seconds = wait_seconds
         self.extend_seconds = extend_seconds
-        # The delay after a failure grows, so a broken engine is not asked
-        # over and over.
+
+
         self.backoff = backoff
         self.max_backoff = max_backoff
 
     def run(self) -> None:
-        """Poll for turns until the process is stopped.
-
-        A failure does not stop the worker, but it does slow it down: the
-        same turn would be handed out again right away.
-        """
         print(f"[{self.worker_id}] 开始轮询 {self.client.base_url}", flush=True)
         failures = 0
         while True:
@@ -225,7 +188,6 @@ class Worker:
                 time.sleep(self.backoff)
 
     def play_turn(self) -> bool:
-        """Play one turn. False means there was no turn to play."""
         claim = self.client.claim(self.worker_id, self.wait_seconds)
         if claim is None:
             return False
@@ -240,7 +202,6 @@ class Worker:
                     claim.config,
                 )
         except Exception:
-            # The turn cannot be played, so it goes back to the server.
             self.client.release(claim.claim_id)
             raise
         print(f"[{self.worker_id}] 落子 ({row},{col})", flush=True)
@@ -258,7 +219,6 @@ class Worker:
             return True
         detail = body.decode("utf-8", "replace")
         if status == 409:
-            # The turn changed under the worker; the result is dropped.
             print(f"[{self.worker_id}] 落子已过期，丢弃结果: {detail}", flush=True)
             return False
         raise WorkerError(f"落子被拒绝: {status} {detail}")

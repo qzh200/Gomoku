@@ -9,7 +9,6 @@ import (
 	"mygo/internal/domain/gomoku"
 )
 
-// createGameRequest is the wire format of the create game request.
 type createGameRequest struct {
 	Mode    gomoku.Mode `json:"mode"`
 	Players map[string]struct {
@@ -19,23 +18,19 @@ type createGameRequest struct {
 	} `json:"players"`
 }
 
-// patchGameRequest is the wire format of the pause and resume request.
 type patchGameRequest struct {
 	ExecutionState  gomoku.ExecutionState `json:"execution_state"`
 	ExpectedVersion *int                  `json:"expected_version"`
 }
 
-// moveListResponse is the wire format of the move history.
 type moveListResponse struct {
 	Items []gomoku.Move `json:"items"`
 }
 
-// gameListResponse is the wire format of the game list.
 type gameListResponse struct {
 	Items []*gomoku.Game `json:"items"`
 }
 
-// handleCreateGame creates a game. The local client token authorizes it.
 func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	token := r.Header.Get("X-Local-Client-Token")
 	if token == "" {
@@ -64,14 +59,10 @@ func (s *Server) handleCreateGame(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, result)
 }
 
-// handleListGames returns the snapshots of all games. Reading is open: the
-// service only listens on the loopback interface and never returns a
-// credential.
 func (s *Server) handleListGames(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, gameListResponse{Items: s.games.List()})
 }
 
-// handleGetGame returns the snapshot of one game.
 func (s *Server) handleGetGame(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	game, err := s.games.Get(id)
@@ -82,7 +73,6 @@ func (s *Server) handleGetGame(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, game)
 }
 
-// handlePatchGame pauses or resumes an automated game.
 func (s *Server) handlePatchGame(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !s.authorizedOwner(w, r, id) {
@@ -101,7 +91,6 @@ func (s *Server) handlePatchGame(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, game)
 }
 
-// handleDeleteGame removes a game.
 func (s *Server) handleDeleteGame(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !s.authorizedOwner(w, r, id) {
@@ -114,7 +103,6 @@ func (s *Server) handleDeleteGame(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleListMoves returns the move history of a game.
 func (s *Server) handleListMoves(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	items, err := s.moves.History(id)
@@ -128,8 +116,6 @@ func (s *Server) handleListMoves(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, moveListResponse{Items: items})
 }
 
-// authorizedOwner checks that the request carries the owner token of the
-// game. It writes the error response itself.
 func (s *Server) authorizedOwner(w http.ResponseWriter, r *http.Request, id string) bool {
 	token := r.Header.Get("X-Game-Owner-Token")
 	if token == "" {

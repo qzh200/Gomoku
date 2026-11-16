@@ -1,18 +1,3 @@
-"""The search of the AlphaZero engine: PUCT over the moves of a position.
-
-Every node of the tree holds the moves that can be played there, how often
-they were visited and how much they won. A move is picked by the PUCT
-formula: the value it won so far, plus a term that grows with the visits of
-the node, so a move that looks good but was barely tried gets a second look.
-
-The leaves are evaluated in batches, so the network sees many positions at
-once and the GPU is not idle between two forward passes. A leaf that waits
-for the network is skipped by the selection, so a batch holds no leaf twice.
-
-The value of a node is seen from the side of the player to move there, so a
-parent reads the value of its child the other way round.
-"""
-
 from __future__ import annotations
 
 import math
@@ -22,35 +7,28 @@ from .board import BOARD_SIZE, Board, other
 from .features import encode, legal_mask
 from .network import ACTION_COUNT, evaluate
 
-# The constant of the PUCT formula. It is how much a fresh move is worth
-# against a move that was already tried many times.
+
 DEFAULT_C_PUCT = 1.5
 
-# The concentration of the Dirichlet noise at the root of the tree.
+
 DEFAULT_DIRICHLET_ALPHA = 0.3
 
-# The share of the noise among the priors of the root.
+
 DEFAULT_NOISE_WEIGHT = 0.25
 
-# The radius of the candidate cells. One means the empty cells that touch a
-# stone; two reaches one cell further. One is the default because it keeps
-# the visit distribution of the search sharp, and a sharp distribution is
-# what the policy head learns from.
+
 DEFAULT_CANDIDATE_RADIUS = 1
 
 
 def cell_of(row: int, col: int) -> int:
-    """Return the index of a cell on the board."""
     return row * BOARD_SIZE + col
 
 
 def row_col_of(cell: int) -> tuple[int, int]:
-    """Return the row and the column of a cell on the board."""
     return divmod(cell, BOARD_SIZE)
 
 
 def apply_noise(priors: list[float], alpha: float, weight: float, rng: random.Random) -> list[float]:
-    """Mix Dirichlet noise into the priors of the root."""
     noise = [rng.gammavariate(alpha, 1.0) for _ in priors]
     total = sum(noise)
     if total <= 0:
@@ -63,8 +41,6 @@ def apply_noise(priors: list[float], alpha: float, weight: float, rng: random.Ra
 
 
 class Node:
-    """One node of the search tree."""
-
     __slots__ = (
         "children",
         "visits",
@@ -81,26 +57,24 @@ class Node:
     def __init__(self, board: Board, player: int) -> None:
         self.children: dict[int, Node] = {}
         self.visits = 0
-        # The sum of the values of this position, seen from the side of the
-        # player to move here.
+
+
         self.value_sum = 0.0
-        # The visits a node has but was not evaluated yet; they keep the
-        # selection away from a leaf that waits for the network.
+
+
         self.virtual_visits = 0
         self.prior = 0.0
         self.board = board
         self.player = player
-        # The value of a finished position, seen from the side of the player
-        # to move there. None while the game is still running.
+
+
         self.terminal_value: float | None = None
         self.expanded = False
-        # The move that led to this node; it is the last move of the board.
+
         self.last_move: tuple[int, int] | None = None
 
 
 class SearchResult:
-    """What one search found: the moves to play and how good they look."""
-
     __slots__ = ("visits", "policy", "root_value", "simulations")
 
     def __init__(
@@ -116,13 +90,11 @@ class SearchResult:
         self.simulations = simulations
 
     def best_move(self) -> int | None:
-        """Return the cell to play, or None when nothing was searched."""
         if not self.visits:
             return None
         return max(self.visits.items(), key=lambda item: item[1])[0]
 
     def sampled_move(self, temperature: float, rng: random.Random) -> int | None:
-        """Return a move drawn from the visits, the way self-play does."""
         if not self.visits:
             return None
         if temperature <= 0:
@@ -142,8 +114,6 @@ class SearchResult:
 
 
 class MCTS:
-    """Searches a position with PUCT and a network that scores the leaves."""
-
     def __init__(
         self,
         model,
@@ -164,7 +134,6 @@ class MCTS:
         self.candidate_radius = candidate_radius
         self.rng = random.Random(seed)
 
-    # -- the search --------------------------------------------------------
 
     def search(
         self,
@@ -174,11 +143,10 @@ class MCTS:
         add_noise: bool = False,
         last_move: tuple[int, int] | None = None,
     ) -> SearchResult:
-        """Search a position and return the visits of its moves."""
         root = Node(board.copy(), player)
         root.last_move = last_move
-        # The root is expanded before the search: its children get the
-        # priors of the network.
+
+
         self._expand(root, self._evaluate([root])[0])
         if add_noise:
             self._add_root_noise(root)
@@ -189,8 +157,6 @@ class MCTS:
         for _ in range(simulations):
             leaf, path = self._descend(root, waiting)
             if leaf is None:
-                # Every child of the node waits for the network: evaluate the
-                # batch now, so the search can go on.
                 self._release(path)
                 self._flush(pending)
                 waiting.clear()
@@ -198,7 +164,6 @@ class MCTS:
                 if leaf is None:
                     break
             if leaf.terminal_value is not None:
-                # The game is over here; the network has nothing to say.
                 self._backpropagate(path, leaf.terminal_value)
                 continue
             pending.append((leaf, path))
@@ -212,10 +177,8 @@ class MCTS:
 
         return self._collect(root)
 
-    # -- the evaluation of the leaves --------------------------------------
 
     def _evaluate(self, nodes: list[Node]) -> list[list[float]]:
-        """Return the policy of every node, taken from the network."""
         planes = []
         masks = []
         for node in nodes:
@@ -225,7 +188,6 @@ class MCTS:
         return policies
 
     def _flush(self, pending: list[tuple[Node, list[Node]]]) -> None:
-        """Evaluate a batch of leaves, expand them and push the values up."""
         if not pending:
             return
         planes = []
@@ -241,7 +203,6 @@ class MCTS:
         pending.clear()
 
     def _expand(self, node: Node, policy: list[float]) -> None:
-        """Give the node its children, one per legal move."""
         node.expanded = True
         moves = node.board.candidates(self.candidate_radius)
         if not moves:
@@ -260,14 +221,12 @@ class MCTS:
             child.prior = prior
             child.last_move = (row, col)
             if won:
-                # The player to move in the child has lost the game.
                 child.terminal_value = -1.0
             node.children[cell_of(row, col)] = child
         if node.board.is_full():
             node.terminal_value = 0.0
 
     def _add_root_noise(self, root: Node) -> None:
-        """Mix the Dirichlet noise into the priors of the root."""
         moves = list(root.children)
         if not moves:
             return
@@ -276,10 +235,8 @@ class MCTS:
         for move, prior in zip(moves, noisy):
             root.children[move].prior = prior
 
-    # -- the walk down the tree --------------------------------------------
 
     def _descend(self, root: Node, waiting: set[int]) -> tuple[Node | None, list[Node]]:
-        """Walk down the tree and return the leaf and the nodes on the way."""
         node = root
         path: list[Node] = [root]
         root.virtual_visits += 1
@@ -294,22 +251,18 @@ class MCTS:
         return node, path
 
     def _select_child(self, node: Node, waiting: set[int]) -> int | None:
-        """Return the move the PUCT formula prefers, or None when there is none."""
         sqrt_total = math.sqrt(max(node.visits, 1))
         best_move: int | None = None
         best_score = -math.inf
         for move, child in node.children.items():
             if id(child) in waiting:
-                # The leaf waits for the network; it is picked another time.
                 continue
             if child.visits > 0:
-                # The value of the child is seen from the side of its player,
-                # so the parent reads it the other way round.
                 quality = -child.value_sum / child.visits
             else:
                 quality = 0.0
-            # The virtual visits only steer the selection away from a leaf
-            # that waits for the network; they are not part of the value.
+
+
             exploration = (
                 self.c_puct * child.prior * sqrt_total / (1 + child.visits + child.virtual_visits)
             )
@@ -319,20 +272,12 @@ class MCTS:
                 best_move = move
         return best_move
 
-    # -- the values ---------------------------------------------------------
 
     def _release(self, path: list[Node]) -> None:
-        """Give the virtual visits of a discarded path back to the tree."""
         for node in path:
             node.virtual_visits = max(0, node.virtual_visits - 1)
 
     def _backpropagate(self, path: list[Node], value: float) -> None:
-        """Push a value up the tree, changing the sign on every level.
-
-        The value belongs to the leaf and is seen from the side of the player
-        to move there. The player above is the other one, so the sign changes
-        on every step up.
-        """
         current = value
         for depth in range(len(path) - 1, -1, -1):
             node = path[depth]
@@ -342,7 +287,6 @@ class MCTS:
             current = -current
 
     def _collect(self, root: Node) -> SearchResult:
-        """Turn the tree into the visits of the moves and the value of the root."""
         visits: dict[int, int] = {}
         policy = [0.0] * ACTION_COUNT
         total = 0
@@ -352,7 +296,7 @@ class MCTS:
         if total > 0:
             for move, child in root.children.items():
                 policy[move] = child.visits / total
-        # The value of the root is seen from the side of the player to move
-        # there, which is the side the value head is asked about.
+
+
         root_value = root.value_sum / root.visits if root.visits else 0.0
         return SearchResult(visits, policy, root_value, total)

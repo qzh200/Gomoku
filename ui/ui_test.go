@@ -13,7 +13,6 @@ import (
 	"mygo/internal/scheduler"
 )
 
-// newTestApp builds an interface over in-memory services.
 func newTestApp(t *testing.T) *App {
 	t.Helper()
 	registry, err := auth.NewRegistry(auth.Config{Engines: []auth.EngineConfig{
@@ -39,7 +38,6 @@ func TestInterfaceDrawsBoardAndCreatesGame(t *testing.T) {
 		t.Fatalf("界面必须显示开始按钮, 实际文本: %v", tester.Texts())
 	}
 
-	// 棋盘区域存在且可交互：点击棋盘中心不应崩溃。
 	rect, ok := tester.Find("开始新棋局")
 	if !ok {
 		t.Fatalf("找不到开始按钮")
@@ -62,7 +60,6 @@ func TestHumanMoveIsAppliedThroughTheApplicationService(t *testing.T) {
 		t.Fatalf("默认模式不对: %s", game.Mode)
 	}
 
-	// 人类执黑，落子必须经过应用服务并落到棋盘上。
 	app.pick(7, 7)
 
 	app.mu.Lock()

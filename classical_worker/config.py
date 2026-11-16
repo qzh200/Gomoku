@@ -1,9 +1,3 @@
-"""Settings of the classical worker.
-
-The connection to MyGo comes from the shared settings of ``aiworker``; the
-search parameters live here, with a .env file in front of them.
-"""
-
 from __future__ import annotations
 
 import os
@@ -11,17 +5,17 @@ from dataclasses import dataclass
 
 from aiworker.settings import ConfigError, Connection
 
-# The defaults of the search.
+
 DEFAULT_DEPTH = 8
 DEFAULT_WIDTH = 12
 DEFAULT_TIME_BUDGET = 2.0
 DEFAULT_VCF_BUDGET = 0.10
-# VCT is implemented but off by default: the root-only defence does not
-# generate counter-fours, and enabling it lost to VCF-only in self-play.
+
+
 DEFAULT_VCT_BUDGET = 0.0
 DEFAULT_TT_ENTRIES = 200_000
 
-# The names of the environment variables of the search.
+
 ENV_DEPTH = "CLASSICAL_DEPTH"
 ENV_WIDTH = "CLASSICAL_WIDTH"
 ENV_TIME_BUDGET = "CLASSICAL_TIME_BUDGET"
@@ -29,14 +23,12 @@ ENV_VCF_BUDGET = "CLASSICAL_VCF_BUDGET"
 ENV_VCT_BUDGET = "CLASSICAL_VCT_BUDGET"
 ENV_TT_ENTRIES = "CLASSICAL_TT_ENTRIES"
 
-# The engine this worker plays for.
+
 DEFAULT_ENGINE_ID = "classical"
 
 
 @dataclass(frozen=True)
 class Settings:
-    """The parameters of one classical worker."""
-
     connection: Connection
     depth: int
     width: int
@@ -47,7 +39,6 @@ class Settings:
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
-        """Read the settings from the environment."""
         source = os.environ if env is None else env
         connection = Connection.read(source, DEFAULT_ENGINE_ID)
 

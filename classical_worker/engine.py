@@ -1,9 +1,3 @@
-"""The classical engine: iterative deepening PVS, threats and forced wins.
-
-The engine owns no state of the game: it reads the board of a turn, searches
-it and answers a cell. The turn itself is played by ``aiworker.protocol``.
-"""
-
 from __future__ import annotations
 
 from .position import Position
@@ -11,12 +5,10 @@ from .search import Searcher
 
 
 class EngineError(RuntimeError):
-    """The engine could not find a move."""
+    pass
 
 
 class ClassicalEngine:
-    """Picks a move with a principal variation search over threat-ordered moves."""
-
     def __init__(
         self,
         depth: int = 8,
@@ -46,11 +38,6 @@ class ClassicalEngine:
         last_move: dict | None = None,
         config: dict | None = None,
     ) -> tuple[int, int]:
-        """Return the row and the column of the move to play.
-
-        The settings of the game win over the ones of the worker, so a game
-        may ask for a deeper search without restarting the process.
-        """
         settings = config or {}
         move = self.searcher.best_move(
             Position(board),

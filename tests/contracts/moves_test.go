@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// move sends a move and returns the status and the body. Every move needs an
-// idempotency key, so a fresh one is generated unless the headers carry it.
 func (h *harness) move(id string, row, col, version int, headers map[string]string) (int, []byte) {
 	h.t.Helper()
 	body := map[string]any{"row": row, "col": col, "expected_version": version}
@@ -66,11 +64,11 @@ func TestMoveHistoryKeepsOrder(t *testing.T) {
 func TestMoveRejectsWrongTurn(t *testing.T) {
 	h := newHarness(t)
 	id, owner := h.createGame("human_vs_ai", aiPlayers("classical"))
-	// 人类执黑，先手可以落子。
+
 	if status, data := h.move(id, 7, 7, 0, ownerHeaders(owner)); status != http.StatusCreated {
 		t.Fatalf("人类第一手必须成功: %d %s", status, data)
 	}
-	// 接下来轮到 AI，人类再落子就是错误回合。
+
 	status, data := h.move(id, 8, 8, 1, ownerHeaders(owner))
 	if status != http.StatusForbidden {
 		t.Fatalf("错误回合必须返回 403, 实际 %d %s", status, data)
@@ -161,7 +159,6 @@ func TestIdempotentMoveReturnsSavedResult(t *testing.T) {
 		t.Fatalf("重试必须返回已保存的结果")
 	}
 
-	// 棋盘上只有一颗棋子。
 	status, data := h.do(http.MethodGet, "/api/v1/games/"+id, nil, nil)
 	if status != http.StatusOK {
 		t.Fatalf("查询棋局失败: %d %s", status, data)
@@ -192,7 +189,7 @@ func TestIdempotencyKeyWithDifferentBodyConflicts(t *testing.T) {
 func TestGameFinishesAfterFiveInARow(t *testing.T) {
 	h := newHarness(t)
 	id, owner := h.createGame("human_vs_human", humanVsHuman())
-	// 双方交替落子：黑棋在第 7 行连成五子，白棋在第 9 行落子。
+
 	for i := range 9 {
 		row, col := 7, 7+i/2
 		if i%2 == 1 {
@@ -214,7 +211,7 @@ func TestGameFinishesAfterFiveInARow(t *testing.T) {
 	if game["winner"].(float64) != 1 {
 		t.Fatalf("胜者必须是黑棋")
 	}
-	// 终局后拒绝落子。
+
 	status, data = h.move(id, 11, 11, 9, ownerHeaders(owner))
 	if status != http.StatusConflict {
 		t.Fatalf("终局后落子必须返回 409, 实际 %d %s", status, data)

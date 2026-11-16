@@ -2,8 +2,6 @@ package application
 
 import "fmt"
 
-// Error is an application level failure. The transport layer maps its code to
-// an HTTP status.
 type Error struct {
 	Code    string
 	Message string
@@ -11,7 +9,6 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
 
-// The error codes of the frozen API contract.
 const (
 	CodeInvalidRequest     = "INVALID_REQUEST"
 	CodeUnauthorized       = "UNAUTHORIZED"
@@ -31,12 +28,10 @@ const (
 	CodeInternalError      = "INTERNAL_ERROR"
 )
 
-// newError builds an application error.
 func newError(code, message string) *Error {
 	return &Error{Code: code, Message: message}
 }
 
-// newErrorf builds an application error with a formatted message.
 func newErrorf(code, format string, args ...any) *Error {
 	return &Error{Code: code, Message: fmt.Sprintf(format, args...)}
 }

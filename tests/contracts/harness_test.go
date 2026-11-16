@@ -1,4 +1,3 @@
-// Package contracts tests the frozen RESTful API of MyGo over HTTP.
 package contracts
 
 import (
@@ -20,14 +19,12 @@ import (
 	httpapi "mygo/internal/transport/http"
 )
 
-// engineTokens are the bearer tokens of the preset engines in the tests.
 var engineTokens = map[string]string{
 	"classical": "classical-test-token",
 	"llm":       "llm-test-token",
 	"az":        "az-test-token",
 }
 
-// harness is a running MyGo API with its own storage.
 type harness struct {
 	t      *testing.T
 	server *httptest.Server
@@ -35,19 +32,15 @@ type harness struct {
 	keys   atomic.Uint64
 }
 
-// newHarness starts an API with the preset engines and fixed tokens.
 func newHarness(t *testing.T) *harness {
 	return newHarnessWithLease(t, 0)
 }
 
-// newHarnessWithLease starts an API whose leases live for the given time.
-// A lease time of zero uses the default.
 func newHarnessWithLease(t *testing.T, leaseTTL time.Duration) *harness {
 	t.Helper()
 	return newHarnessWithEngines(t, leaseTTL, "classical", "llm")
 }
 
-// newHarnessWithEngines starts an API with the given engines and fixed tokens.
 func newHarnessWithEngines(t *testing.T, leaseTTL time.Duration, engineIDs ...string) *harness {
 	t.Helper()
 	engines := make([]auth.EngineConfig, 0, len(engineIDs))
@@ -82,7 +75,6 @@ func newHarnessWithEngines(t *testing.T, leaseTTL time.Duration, engineIDs ...st
 	return h
 }
 
-// do sends a request and returns the status and the body.
 func (h *harness) do(method, path string, body any, headers map[string]string) (int, []byte) {
 	h.t.Helper()
 	var reader io.Reader
@@ -120,22 +112,18 @@ func (h *harness) do(method, path string, body any, headers map[string]string) (
 	return resp.StatusCode, data
 }
 
-// localHeaders returns the headers of the local interface.
 func (h *harness) localHeaders() map[string]string {
 	return map[string]string{"X-Local-Client-Token": h.local}
 }
 
-// ownerHeaders returns the headers of the owner of a game.
 func ownerHeaders(token string) map[string]string {
 	return map[string]string{"X-Game-Owner-Token": token}
 }
 
-// engineHeaders returns the headers of an AI engine.
 func engineHeaders(engineID string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + engineTokens[engineID]}
 }
 
-// httptestServer starts a server for a test and returns its URL.
 func httptestServer(t *testing.T, handler http.Handler) string {
 	t.Helper()
 	server := httptest.NewServer(handler)
@@ -143,7 +131,6 @@ func httptestServer(t *testing.T, handler http.Handler) string {
 	return server.URL
 }
 
-// decode unmarshals a response body.
 func decode(t *testing.T, data []byte) map[string]any {
 	t.Helper()
 	var out map[string]any
@@ -153,7 +140,6 @@ func decode(t *testing.T, data []byte) map[string]any {
 	return out
 }
 
-// errorCode returns the error code of an error response.
 func errorCode(t *testing.T, data []byte) string {
 	t.Helper()
 	out := decode(t, data)

@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-"""Mock MyGo AI worker.
-
-A reference implementation of the Python worker protocol: it long polls for a
-turn, picks a legal move with a simple heuristic and submits it. It is used to
-verify that a worker can be written against the frozen contract alone.
-
-Usage:
-    python mock_worker.py --engine classical --token <engine_token>
-    python mock_worker.py --engine classical --token <engine_token> \
-        --url http://127.0.0.1:8080/api/v1
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -26,7 +13,6 @@ BOARD_SIZE = 15
 
 
 def request(url: str, method: str, token: str | None = None, body: Any = None) -> tuple[int, bytes]:
-    """Send one request and return the status and the body."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     if data is not None:
@@ -41,7 +27,6 @@ def request(url: str, method: str, token: str | None = None, body: Any = None) -
 
 
 def score_line(board: list[list[int]], row: int, col: int, player: int) -> int:
-    """Score the line through a cell for the given player."""
     total = 0
     for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
         count = 1
@@ -59,7 +44,6 @@ def score_line(board: list[list[int]], row: int, col: int, player: int) -> int:
 
 
 def pick_move(board: list[list[int]], player: int) -> tuple[int, int]:
-    """Pick the best empty cell for the given player."""
     best: tuple[int, int] | None = None
     best_score = -1
     for row in range(BOARD_SIZE):
@@ -68,7 +52,7 @@ def pick_move(board: list[list[int]], player: int) -> tuple[int, int]:
                 continue
             score = score_line(board, row, col, player)
             score += score_line(board, row, col, 3 - player) // 2
-            # Prefer the center a little.
+
             score += max(0, 7 - abs(row - 7) - abs(col - 7))
             if score > best_score:
                 best_score = score
@@ -79,7 +63,6 @@ def pick_move(board: list[list[int]], player: int) -> tuple[int, int]:
 
 
 def run(url: str, engine: str, token: str, worker_id: str) -> int:
-    """Poll for turns until the process is stopped."""
     print(f"[{worker_id}] 开始轮询 {url}", flush=True)
     while True:
         status, body = request(
@@ -122,7 +105,6 @@ def run(url: str, engine: str, token: str, worker_id: str) -> int:
 
 
 def request_with_key(url: str, token: str, body: dict[str, Any]) -> tuple[int, bytes]:
-    """Send a move with an idempotency key."""
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")

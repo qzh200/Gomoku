@@ -1,15 +1,3 @@
-"""The arena: how strong is the AlphaZero engine against the classical one?
-
-Two engines play whole games against each other on one board. The games are
-played with the same rules as the server: five in a row wins, a full board is
-a draw. Every game starts from an empty board and the engines swap colours,
-so a fair number of games says something about the strength.
-
-Usage:
-    python -m az_worker.arena --games 20
-    python -m az_worker.arena --games 20 --simulations 200 --device cuda
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -21,7 +9,7 @@ from classical_worker.search import Searcher
 from .board import BLACK, WHITE, Board, other
 from .engine import AlphaZeroEngine
 
-# The defaults of the arena.
+
 DEFAULT_GAMES = 10
 DEFAULT_SIMULATIONS = 400
 DEFAULT_CLASSICAL_DEPTH = 4
@@ -30,7 +18,6 @@ DEFAULT_CLASSICAL_TIME = 0.5
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser of the command line."""
     parser = argparse.ArgumentParser(description="AlphaZero 与传统引擎的擂台赛")
     parser.add_argument("--games", type=int, default=DEFAULT_GAMES, help="棋局数")
     parser.add_argument("--model", default="models/az/current.pt", help="AlphaZero 权重文件")
@@ -44,7 +31,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def play_game(az: AlphaZeroEngine, classical: Searcher, az_is_black: bool) -> int | None:
-    """Play one game and return the winner, or None for a draw."""
     board = Board()
     player = BLACK
     az_player = BLACK if az_is_black else WHITE
@@ -71,7 +57,6 @@ def play_game(az: AlphaZeroEngine, classical: Searcher, az_is_black: bool) -> in
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Play the games and report the result."""
     args = build_parser().parse_args(argv)
     az = AlphaZeroEngine(
         model_path=args.model,

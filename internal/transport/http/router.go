@@ -1,5 +1,3 @@
-// Package http is the RESTful transport of MyGo. It converts the wire format
-// into application calls and back.
 package http
 
 import (
@@ -9,7 +7,6 @@ import (
 	"mygo/internal/auth"
 )
 
-// Server serves the frozen RESTful API of MyGo.
 type Server struct {
 	games  *application.GameService
 	moves  *application.MoveService
@@ -17,12 +14,10 @@ type Server struct {
 	auth   *auth.Registry
 }
 
-// NewServer builds a server over the application services.
 func NewServer(games *application.GameService, moves *application.MoveService, claims *application.ClaimService, registry *auth.Registry) *Server {
 	return &Server{games: games, moves: moves, claims: claims, auth: registry}
 }
 
-// Handler returns the HTTP handler of the API.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/games", s.handleCreateGame)

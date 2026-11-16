@@ -9,42 +9,32 @@ import (
 	"mygo/internal/repository"
 )
 
-// CreatePlayer describes one side of a new game.
 type CreatePlayer struct {
 	Type     gomoku.PlayerType `json:"type"`
 	EngineID string            `json:"engine_id"`
 	Config   map[string]any    `json:"config"`
 }
 
-// CreateGameRequest is the request of the create game use case.
 type CreateGameRequest struct {
 	Mode    gomoku.Mode             `json:"mode"`
 	Players map[string]CreatePlayer `json:"players"`
 }
 
-// CreateResult is the outcome of the create game use case.
 type CreateResult struct {
 	Game       *gomoku.Game `json:"game"`
 	OwnerToken string       `json:"owner_token"`
 }
 
-// GameService owns the lifecycle of the games.
 type GameService struct {
 	coord   *Coordinator
 	engines *auth.Registry
 	nextID  atomic.Int64
 }
 
-// NewGameService builds a game service.
 func NewGameService(coord *Coordinator, engines *auth.Registry) *GameService {
 	return &GameService{coord: coord, engines: engines}
 }
 
-// Create creates a game and returns its snapshot with the owner token. The
-// owner token is returned only here.
-//
-// The caller identity and the idempotency key scope the request, so a retry
-// with the same key returns the same game instead of a second one.
 func (s *GameService) Create(callerHash string, req CreateGameRequest, idempotencyKey string) (*CreateResult, error) {
 	scope := IdempotencyScope(Caller{Kind: CallerOwner, OwnerTokenHash: callerHash}, "POST /games", idempotencyKey)
 	hash := RequestHash(req.Mode, req.Players["black"], req.Players["white"])
@@ -75,7 +65,6 @@ func (s *GameService) Create(callerHash string, req CreateGameRequest, idempoten
 	return result, nil
 }
 
-// create builds a new game. The caller must hold the coordinator lock.
 func (s *GameService) create(req CreateGameRequest) (*CreateResult, error) {
 	if !req.Mode.Valid() {
 		return nil, newErrorf(CodeInvalidGameConfig, "未知的对战模式 %q", req.Mode)
@@ -102,7 +91,6 @@ func (s *GameService) create(req CreateGameRequest) (*CreateResult, error) {
 	return &CreateResult{Game: game.Clone(), OwnerToken: ownerToken}, nil
 }
 
-// playerConfig validates one side of a new game.
 func (s *GameService) playerConfig(req CreateGameRequest, side string) (gomoku.PlayerConfig, error) {
 	player, ok := req.Players[side]
 	if !ok {
@@ -136,7 +124,6 @@ func (s *GameService) playerConfig(req CreateGameRequest, side string) (gomoku.P
 	}
 }
 
-// checkMode verifies that the players match the mode.
 func (s *GameService) checkMode(mode gomoku.Mode, black, white gomoku.PlayerConfig) error {
 	human, ai := 0, 0
 	for _, side := range []gomoku.PlayerConfig{black, white} {
@@ -163,14 +150,12 @@ func (s *GameService) checkMode(mode gomoku.Mode, black, white gomoku.PlayerConf
 	return nil
 }
 
-// List returns the snapshots of all games.
 func (s *GameService) List() []*gomoku.Game {
 	s.coord.Lock()
 	defer s.coord.Unlock()
 	return s.withThinking(s.coord.Games().List())
 }
 
-// Get returns the snapshot of one game.
 func (s *GameService) Get(id string) (*gomoku.Game, error) {
 	s.coord.Lock()
 	defer s.coord.Unlock()
@@ -182,7 +167,6 @@ func (s *GameService) Get(id string) (*gomoku.Game, error) {
 	return game, nil
 }
 
-// Delete removes a game and invalidates its leases.
 func (s *GameService) Delete(id string) error {
 	s.coord.Lock()
 	defer s.coord.Unlock()
@@ -194,7 +178,6 @@ func (s *GameService) Delete(id string) error {
 	return nil
 }
 
-// SetExecutionState pauses or resumes an automated game.
 func (s *GameService) SetExecutionState(id string, state gomoku.ExecutionState, expectedVersion *int) (*gomoku.Game, error) {
 	if state != gomoku.ExecutionPaused && state != gomoku.ExecutionRunning {
 		return nil, newErrorf(CodeInvalidRequest, "未知的执行状态 %q", state)
@@ -237,7 +220,6 @@ func (s *GameService) SetExecutionState(id string, state gomoku.ExecutionState, 
 	return game, nil
 }
 
-// withThinking fills the ai_thinking flag of the snapshots.
 func (s *GameService) withThinking(games []*gomoku.Game) []*gomoku.Game {
 	for _, game := range games {
 		game.AIThinking = s.coord.Leases().ActiveFor(game.ID, game.Version)

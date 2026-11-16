@@ -1,13 +1,3 @@
-"""The worker protocol and the shared settings of the MyGo engines.
-
-``protocol`` claims a turn, keeps its lease alive, submits the move and drops
-a result that came too late. ``settings`` reads the parameters and the bearer
-token that MyGo publishes.
-
-An engine plugs into the protocol by answering ``choose_move``; the two
-engines of this repository (``llm_worker`` and ``classical_worker``) do that.
-"""
-
 from .protocol import Claim, Engine, LeaseKeeper, MyGoClient, Worker, WorkerError
 from .settings import (
     ConfigError,

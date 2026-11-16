@@ -1,9 +1,3 @@
-"""Tests of the LLM engine.
-
-The tests run with the standard library only:
-    python -m unittest discover -s llm_worker/tests -t .
-"""
-
 from __future__ import annotations
 
 import json
@@ -19,11 +13,6 @@ from llm_worker.openai_client import APIError, Answer, ChatMessage, OpenAIClient
 
 
 class FakeClient:
-    """A model client that answers with a fixed list of answers.
-
-    An answer given as a tuple marks the text as the reasoning of a model.
-    """
-
     def __init__(self, answers: list[str | tuple[str, bool]]) -> None:
         self.answers = list(answers)
         self.calls: list[list[ChatMessage]] = []
@@ -39,7 +28,6 @@ class FakeClient:
 
 
 def empty_board() -> list[list[int]]:
-    """Return an empty 15x15 board."""
     return [[0] * board.BOARD_SIZE for _ in range(board.BOARD_SIZE)]
 
 
@@ -134,11 +122,9 @@ class BoardTests(unittest.TestCase):
         self.assertIsNone(board.parse_move("我不知道"))
 
     def test_reads_numbers_as_the_labels_of_the_board(self) -> None:
-        # M5 on the board is the row 5 and the column 13, so it is the cell
-        # (4, 12) of the API.
         self.assertEqual(board.parse_move('{"row": 5, "col": 13}'), (4, 12))
         self.assertEqual(board.parse_move('{"row": 1, "col": 1}'), (0, 0))
-        # Out of the labels, the numbers are the 0-based indexes of the API.
+
         self.assertEqual(board.parse_move('{"row": 0, "col": 0}'), (0, 0))
         self.assertIsNone(board.parse_move('{"row": 16, "col": 16}'))
 
@@ -153,9 +139,9 @@ class BoardTests(unittest.TestCase):
         self.assertNotIn((7, 7), cells)
         self.assertIn((7, 6), cells)
         self.assertIn((8, 8), cells)
-        # A far corner is not worth offering.
+
         self.assertNotIn((0, 0), cells)
-        # The cells next to a stone come before the ones further out.
+
         self.assertIn((7, 6), cells[:8])
 
     def test_offers_the_center_on_an_empty_board(self) -> None:
@@ -192,8 +178,8 @@ class EngineTests(unittest.TestCase):
         engine = LLMEngine(client, max_attempts=2)
         engine.choose_move(state, [], board.BLACK)
         problem = client.calls[1][-1].content
-        # The cell next to the white stone is offered again, so a model that
-        # lost the list has it in front of it.
+
+
         self.assertIn("只能从这些点里选", problem)
         self.assertIn(board.coordinate_of(3, 4), problem)
 
@@ -207,8 +193,6 @@ class EngineTests(unittest.TestCase):
         self.assertIn("不在可下点里", client.calls[1][-1].content)
 
     def test_plays_a_legal_cell_when_the_model_never_complies(self) -> None:
-        # The model answers a cell it may not play, every time. The turn must
-        # still be played, or the server hands the same turn out again.
         state = empty_board()
         state[7][7] = board.BLACK
         client = FakeClient(['{"move": "B6"}', '{"move": "B6"}'])
@@ -338,8 +322,6 @@ class EngineReasoningTests(unittest.TestCase):
         self.assertEqual(engine.choose_move(empty_board(), [], board.BLACK), (7, 7))
 
     def test_does_not_read_a_coordinate_from_the_reasoning(self) -> None:
-        # Prose in the reasoning mentions cells; none of them is the answer,
-        # so the engine falls back to a cell it offered instead.
         client = FakeClient([("O 在 H8，下一步可能下在 I9", True)])
         engine = LLMEngine(client, max_attempts=1)
         move = engine.choose_move(empty_board(), [], board.BLACK)

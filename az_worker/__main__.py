@@ -1,10 +1,3 @@
-"""The entry point of the AlphaZero worker.
-
-Usage:
-    python -m az_worker
-    python -m az_worker --env-file az_worker/.env
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -15,12 +8,11 @@ from aiworker import ConfigError, MyGoClient, Worker, load_dotenv, worker_dotenv
 from .config import Settings
 from .engine import AlphaZeroEngine
 
-# The name of the package, used to find its .env file.
+
 PACKAGE = "az_worker"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser of the command line."""
     parser = argparse.ArgumentParser(description="MyGo AlphaZero Worker（神经网络策略 + MCTS）")
     parser.add_argument(
         "--env-file",
@@ -31,7 +23,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Read the parameters and play the turns until the process is stopped."""
     args = build_parser().parse_args(argv)
     for candidate in worker_dotenv_candidates(PACKAGE, args.env_file):
         load_dotenv(candidate)

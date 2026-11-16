@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// aiVsAIPlayers returns the players of an AI game.
 func aiVsAIPlayers() map[string]any {
 	return map[string]any{
 		"black": map[string]any{"type": "ai", "engine_id": "classical"},
@@ -14,7 +13,6 @@ func aiVsAIPlayers() map[string]any {
 	}
 }
 
-// claim asks for a turn of an engine.
 func (h *harness) claim(engineID, workerID string, waitSeconds int) (int, []byte) {
 	h.t.Helper()
 	return h.do(http.MethodPost, "/api/v1/ai/turn-claims", map[string]any{
@@ -173,7 +171,6 @@ func TestRenewAndReleaseClaim(t *testing.T) {
 		t.Fatalf("续期响应不对: %v", renewed)
 	}
 
-	// 其他引擎不能续期。
 	status, data = h.do(http.MethodPatch, "/api/v1/ai/turn-claims/"+claimID, map[string]any{"extend_seconds": 60}, engineHeaders("llm"))
 	if status != http.StatusForbidden {
 		t.Fatalf("其他引擎续期必须返回 403, 实际 %d %s", status, data)
@@ -210,7 +207,6 @@ func TestPauseInvalidatesLease(t *testing.T) {
 		t.Fatalf("暂停必须返回 200, 实际 %d %s", status, data)
 	}
 
-	// 租约失效后，迟到的 AI 结果必须被拒绝。
 	status, data = h.do(http.MethodPost, "/api/v1/games/"+id+"/moves", map[string]any{
 		"row": 7, "col": 7, "expected_version": 0, "claim_id": claimID,
 	}, engineHeaders("classical"))
@@ -218,7 +214,6 @@ func TestPauseInvalidatesLease(t *testing.T) {
 		t.Fatalf("暂停后的 AI 落子必须返回 409, 实际 %d %s", status, data)
 	}
 
-	// 暂停后不得再领取任务。
 	status, data = h.claim("classical", "worker-2", 0)
 	if status != http.StatusNoContent {
 		t.Fatalf("暂停后不得领取任务, 实际 %d %s", status, data)

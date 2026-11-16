@@ -11,57 +11,45 @@ import (
 	"mygo/internal/scheduler"
 )
 
-// now returns the current time. It is a variable so tests can freeze it.
 var now = time.Now
 
-// CallerKind tells whether a caller acts as the owner of a game or as an AI
-// engine.
 type CallerKind int
 
-// The caller kinds.
 const (
 	CallerOwner CallerKind = iota
 	CallerEngine
 )
 
-// Caller identifies who submits a move.
 type Caller struct {
 	Kind CallerKind
-	// EngineID is the engine of an AI caller, derived from its credential.
+
 	EngineID string
-	// OwnerTokenHash is the stored hash of the owner token of a local caller.
+
 	OwnerTokenHash string
 }
 
-// SubmitMoveRequest is the request of the unified move use case.
 type SubmitMoveRequest struct {
 	Row             int
 	Col             int
 	ExpectedVersion int
 	ClaimID         string
-	// IdempotencyKey deduplicates retries of the same request.
+
 	IdempotencyKey string
 }
 
-// MoveResult is the outcome of a successful move.
 type MoveResult struct {
 	Move gomoku.Move  `json:"move"`
 	Game *gomoku.Game `json:"game"`
 }
 
-// MoveService owns the unified move use case. Human players and AI players
-// share the same rules; only the identity check differs.
 type MoveService struct {
 	coord *Coordinator
 }
 
-// NewMoveService builds a move service.
 func NewMoveService(coord *Coordinator) *MoveService {
 	return &MoveService{coord: coord}
 }
 
-// Submit validates and applies a move. A repeated request with the same
-// idempotency key returns the saved result without placing a second stone.
 func (s *MoveService) Submit(gameID string, caller Caller, req SubmitMoveRequest) (*MoveResult, error) {
 	scope := IdempotencyScope(caller, "POST /games/"+gameID+"/moves", req.IdempotencyKey)
 	hash := RequestHash(req.Row, req.Col, req.ExpectedVersion, req.ClaimID)
@@ -145,7 +133,6 @@ func (s *MoveService) Submit(gameID string, caller Caller, req SubmitMoveRequest
 	return result, nil
 }
 
-// checkCaller verifies that the caller may act on the game at all.
 func (s *MoveService) checkCaller(game *gomoku.Game, caller Caller) error {
 	switch caller.Kind {
 	case CallerOwner:
@@ -163,7 +150,6 @@ func (s *MoveService) checkCaller(game *gomoku.Game, caller Caller) error {
 	return nil
 }
 
-// playsEngine reports whether the engine plays one of the sides.
 func (s *MoveService) playsEngine(game *gomoku.Game, engineID string) bool {
 	for _, side := range []gomoku.PlayerConfig{game.Black(), game.White()} {
 		if side.IsAI() && side.EngineName() == engineID {
@@ -173,7 +159,6 @@ func (s *MoveService) playsEngine(game *gomoku.Game, engineID string) bool {
 	return false
 }
 
-// checkTurn verifies that the caller owns the side to move.
 func (s *MoveService) checkTurn(game *gomoku.Game, caller Caller) error {
 	side := game.ConfigFor(game.Current)
 	switch caller.Kind {
@@ -189,7 +174,6 @@ func (s *MoveService) checkTurn(game *gomoku.Game, caller Caller) error {
 	return nil
 }
 
-// checkClaim verifies that the AI holds a valid lease for the turn.
 func (s *MoveService) checkClaim(game *gomoku.Game, caller Caller, claimID string) error {
 	if claimID == "" {
 		return newError(CodeClaimInvalid, "AI 落子必须携带 claim_id")
@@ -213,7 +197,6 @@ func (s *MoveService) checkClaim(game *gomoku.Game, caller Caller, claimID strin
 	return nil
 }
 
-// CheckOwner verifies that the caller owns the game.
 func (s *MoveService) CheckOwner(gameID string, caller Caller) (*gomoku.Game, error) {
 	s.coord.Lock()
 	defer s.coord.Unlock()
@@ -227,7 +210,6 @@ func (s *MoveService) CheckOwner(gameID string, caller Caller) (*gomoku.Game, er
 	return game, nil
 }
 
-// History returns the moves of a game.
 func (s *MoveService) History(gameID string) ([]gomoku.Move, error) {
 	s.coord.Lock()
 	defer s.coord.Unlock()
@@ -238,7 +220,6 @@ func (s *MoveService) History(gameID string) ([]gomoku.Move, error) {
 	return game.History(), nil
 }
 
-// IdempotencyScope builds the storage scope of an idempotency key.
 func IdempotencyScope(caller Caller, endpoint, key string) string {
 	who := caller.OwnerTokenHash
 	if caller.Kind == CallerEngine {
@@ -247,7 +228,6 @@ func IdempotencyScope(caller Caller, endpoint, key string) string {
 	return fmt.Sprintf("%s|%s|%s", who, endpoint, key)
 }
 
-// RequestHash identifies the content of a mutating request.
 func RequestHash(parts ...any) string {
 	sum := sha256.Sum256([]byte(fmt.Sprint(parts...)))
 	return hex.EncodeToString(sum[:])

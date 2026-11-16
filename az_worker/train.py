@@ -1,14 +1,3 @@
-"""The training of the AlphaZero network.
-
-Usage:
-    python -m az_worker.train --games 20 --iterations 10
-    python -m az_worker.train --device cpu --simulations 64
-
-Every iteration plays a few games with the current network, puts the examples
-into the replay buffer and trains on them. The weights are written after
-every iteration, so a run that is stopped keeps what it learned.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -21,7 +10,7 @@ import torch
 from .network import GomokuNet, load_model
 from .selfplay import Example, ReplayBuffer, SelfPlay, evaluate, save_checkpoint, train
 
-# The defaults of a training run.
+
 DEFAULT_GAMES = 10
 DEFAULT_ITERATIONS = 10
 DEFAULT_SIMULATIONS = 200
@@ -35,7 +24,6 @@ DEFAULT_LEARNING_RATE = 1e-3
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the parser of the command line."""
     parser = argparse.ArgumentParser(description="AlphaZero 自对弈训练")
     parser.add_argument("--games", type=int, default=DEFAULT_GAMES, help="每轮自对弈的局数")
     parser.add_argument("--iterations", type=int, default=DEFAULT_ITERATIONS, help="训练轮数")
@@ -68,26 +56,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def resolve_device(name: str) -> torch.device:
-    """Return the device the training runs on."""
     if name == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(name)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Train the network and write the weights after every iteration."""
     args = build_parser().parse_args(argv)
     device = resolve_device(args.device)
     rng = random.Random(args.seed)
     torch.manual_seed(args.seed if args.seed is not None else 0)
 
     model_path = Path(args.model)
-    # The starting weights and the written weights are two files: a run that
-    # starts from the warm start keeps that file intact.
+
+
     start_path = Path(args.init) if args.init else model_path
     if start_path.is_file():
-        # The size of the network is stored with the weights, so a run that
-        # continues an old one keeps its shape.
         model = load_model(str(start_path), device)
         print(f"读取权重: {start_path}", flush=True)
     else:
@@ -120,8 +104,8 @@ def main(argv: list[str] | None = None) -> int:
                 buffer.add(example)
             if game.winner is not None:
                 wins[game.winner] += 1
-        # The games of this iteration are the validation set of the next
-        # round: they are trained on only after they were measured.
+
+
         validation = player.play_game().examples
         losses = train(
             model,

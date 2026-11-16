@@ -1,9 +1,3 @@
-"""The settings of the AlphaZero worker.
-
-The connection to MyGo comes from the shared settings of ``aiworker``; the
-search and the model live here, with a .env file in front of them.
-"""
-
 from __future__ import annotations
 
 import os
@@ -11,7 +5,7 @@ from dataclasses import dataclass
 
 from aiworker.settings import ConfigError, Connection
 
-# The defaults of the search and the model.
+
 DEFAULT_MODEL_PATH = "models/az/current.pt"
 DEFAULT_DEVICE = "auto"
 DEFAULT_SIMULATIONS = 400
@@ -20,7 +14,7 @@ DEFAULT_BATCH_SIZE = 32
 DEFAULT_CANDIDATE_RADIUS = 1
 DEFAULT_TEMPERATURE = 0.0
 
-# The names of the environment variables of the engine.
+
 ENV_MODEL_PATH = "AZ_MODEL_PATH"
 ENV_DEVICE = "AZ_DEVICE"
 ENV_SIMULATIONS = "AZ_SIMULATIONS"
@@ -29,14 +23,12 @@ ENV_BATCH_SIZE = "AZ_BATCH_SIZE"
 ENV_CANDIDATE_RADIUS = "AZ_CANDIDATE_RADIUS"
 ENV_TEMPERATURE = "AZ_TEMPERATURE"
 
-# The engine this worker plays for.
+
 DEFAULT_ENGINE_ID = "az"
 
 
 @dataclass(frozen=True)
 class Settings:
-    """The parameters of one AlphaZero worker."""
-
     connection: Connection
     model_path: str
     device: str
@@ -48,7 +40,6 @@ class Settings:
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
-        """Read the settings from the environment."""
         source = os.environ if env is None else env
         connection = Connection.read(source, DEFAULT_ENGINE_ID)
 

@@ -1,5 +1,3 @@
-// Command app runs the MyGo desktop application: the RESTful API for the
-// Python AI workers and the native desktop interface.
 package main
 
 import (
@@ -27,8 +25,6 @@ import (
 	"mygo/ui"
 )
 
-// defaultAddr is the address of the local API. It binds the loopback
-// interface only, the service is never exposed to the network by default.
 const defaultAddr = "127.0.0.1:8080"
 
 func main() {
@@ -44,7 +40,6 @@ func main() {
 	}
 }
 
-// run starts the API server and the desktop window.
 func run(addr string) error {
 	configPath := os.Getenv(config.PathEnv)
 	if configPath == "" {
@@ -62,7 +57,6 @@ func run(addr string) error {
 		log.Printf("未找到 %s，使用内置引擎与随机令牌", configPath)
 	}
 
-	// The workers learn their token from this file, so nobody has to copy it.
 	runtimePath := os.Getenv(config.RuntimePathEnv)
 	if runtimePath == "" {
 		runtimePath = config.RuntimePath
@@ -97,8 +91,6 @@ func run(addr string) error {
 		_ = httpServer.Shutdown(ctx)
 	}()
 
-	// The file is written once the server listens, so it never holds the
-	// token of a process that did not come up.
 	entries := make([]auth.EngineConfig, 0, len(cfg.Engines))
 	for _, engine := range registry.Engines() {
 		available := engine.Available
@@ -156,7 +148,6 @@ func run(addr string) error {
 	return nil
 }
 
-// portOf returns the port of an address.
 func portOf(addr string) int {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {

@@ -1,10 +1,3 @@
-"""The LLM engine: it asks the model for a move and checks the answer.
-
-The engine holds no state of the game. It reads the board of a turn, asks the
-model where to play and returns the move it picked. The protocol of the game
-lives in the worker, the model in the client, so both can be replaced alone.
-"""
-
 from __future__ import annotations
 
 import json
@@ -12,8 +5,7 @@ import json
 from . import board
 from .openai_client import Answer, ChatMessage, OpenAIClient
 
-# The system prompt tells the model the rules of the game and the shape of
-# the answer. The board in the user message carries the position.
+
 SYSTEM_PROMPT = (
     "你是五子棋引擎，棋盘 15×15，黑棋先行，横竖斜连续五子获胜。"
     "你收到棋盘、落子历史和当前执子方，请选一个空点落子。"
@@ -22,25 +14,22 @@ SYSTEM_PROMPT = (
     '只输出 JSON：{"move": "M5"}，不要输出其他内容。'
 )
 
-# The problem a move gets when it is not on the board or on a free cell.
+
 INVALID_MOVE_HINT = "该位置无效或已有棋子，请换一个空点。"
 
-# The reminder of the shape of the answer, after an answer that had no move.
+
 FORMAT_HINT = '请只输出 JSON：{"move": "M5"}，坐标用棋盘的列字母和行号。'
 
-# How many cells the prompt offers, and how many the correction repeats.
-# Enough to choose from, few enough for a small model to read.
+
 OFFERED_LIMIT = 20
 RETRY_CELLS = 12
 
 
 class EngineError(RuntimeError):
-    """The engine could not find a move at all."""
+    pass
 
 
 class LLMEngine:
-    """Picks a move with a language model."""
-
     def __init__(self, client: OpenAIClient, max_attempts: int = 2) -> None:
         self.client = client
         self.max_attempts = max(1, max_attempts)
@@ -53,13 +42,6 @@ class LLMEngine:
         last_move: dict | None = None,
         config: dict | None = None,
     ) -> tuple[int, int]:
-        """Return the row and the column of the move to play.
-
-        A model that keeps answering a cell it may not play would cost the
-        turn, and the server would hand the same turn out again. So after the
-        attempts are spent the engine plays the first cell it offered: the
-        game keeps going and the log says the model was overruled.
-        """
         offered = board.candidates(board_state, OFFERED_LIMIT)
         if not offered:
             raise EngineError("棋盘已满，没有可落子的位置")
@@ -78,11 +60,8 @@ class LLMEngine:
                 row, col = move
                 cell = board.coordinate_of(row, col)
                 if not board.is_empty(board_state, row, col):
-                    # Naming the cell it picked tells the model what went wrong.
                     problem = f"{cell} {INVALID_MOVE_HINT}" + retry_hint
                 elif move not in allowed:
-                    # A stone far from the others helps nobody; repeating the
-                    # list is what makes a small model pick from it.
                     problem = f"{cell} 不在可下点里。" + retry_hint
                 else:
                     return row, col
@@ -98,12 +77,6 @@ class LLMEngine:
         return fallback
 
     def _move_of(self, answer: "Answer", board_state: list[list[int]]) -> tuple[int, int] | None:
-        """Read the move out of the answer of the model.
-
-        A reasoning model that ran out of tokens answers in its reasoning
-        text, where a coordinate may be mentioned in passing. Only a JSON
-        object is trusted there; the plain content may also be a coordinate.
-        """
         if answer.from_reasoning:
             return board.parse_move_strict(answer.text)
         return board.parse_move(answer.text)
@@ -116,7 +89,6 @@ class LLMEngine:
         last_move: dict | None,
         config: dict | None,
     ) -> list[ChatMessage]:
-        """Build the conversation that asks for a move."""
         lines = [
             "当前棋盘（列 A-O，行 1-15，X 是黑棋，O 是白棋，. 是空点）：",
             board.render_board(board_state),

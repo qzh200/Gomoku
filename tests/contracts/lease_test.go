@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// TestExpiredLeaseIsReassignedAfterWorkerExit covers a worker that dies
-// without releasing its lease: the turn must become claimable again.
 func TestExpiredLeaseIsReassignedAfterWorkerExit(t *testing.T) {
 	h := newHarnessWithLease(t, 150*time.Millisecond)
 	h.createGame("ai_vs_ai", aiVsAIPlayers())
@@ -18,7 +16,6 @@ func TestExpiredLeaseIsReassignedAfterWorkerExit(t *testing.T) {
 	}
 	claim := decode(t, data)
 
-	// 租约过期后，同一回合必须能被另一个 Worker 领取。
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		status, data = h.claim("classical", "worker-2", 0)
@@ -34,8 +31,6 @@ func TestExpiredLeaseIsReassignedAfterWorkerExit(t *testing.T) {
 	t.Fatalf("租约过期后必须能重新领取")
 }
 
-// TestExpiredLeaseRejectsLateResult covers a worker that answers after its
-// lease expired: the result must be rejected.
 func TestExpiredLeaseRejectsLateResult(t *testing.T) {
 	h := newHarnessWithLease(t, 100*time.Millisecond)
 	id, _ := h.createGame("ai_vs_ai", aiVsAIPlayers())
@@ -60,8 +55,6 @@ func TestExpiredLeaseRejectsLateResult(t *testing.T) {
 	}
 }
 
-// TestLongThinkingWorkerRenewsItsLease covers an LLM style worker that keeps
-// its lease alive while it thinks.
 func TestLongThinkingWorkerRenewsItsLease(t *testing.T) {
 	h := newHarnessWithLease(t, 200*time.Millisecond)
 	id, _ := h.createGame("ai_vs_ai", map[string]any{
@@ -83,7 +76,6 @@ func TestLongThinkingWorkerRenewsItsLease(t *testing.T) {
 		}
 	}
 
-	// 续期之后租约仍然有效，落子可以成功。
 	status, data = h.do(http.MethodPost, "/api/v1/games/"+id+"/moves", map[string]any{
 		"row": 7, "col": 7, "expected_version": 0, "claim_id": claimID,
 	}, engineHeaders("llm"))

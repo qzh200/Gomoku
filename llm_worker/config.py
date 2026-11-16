@@ -1,10 +1,3 @@
-"""Settings of the LLM worker.
-
-The parameters come from the process environment; a ``.env`` file fills the
-environment first. The connection to MyGo, including the bearer token that
-MyGo publishes, is read by the shared settings of ``aiworker``.
-"""
-
 from __future__ import annotations
 
 import os
@@ -12,8 +5,7 @@ from dataclasses import dataclass
 
 from aiworker.settings import ConfigError, Connection
 
-# The defaults of the model side. The connection to MyGo comes from the
-# shared settings.
+
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
 DEFAULT_TEMPERATURE = 0.2
@@ -21,7 +13,7 @@ DEFAULT_MAX_TOKENS = 2000
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_ATTEMPTS = 2
 
-# The names of the environment variables of the model side.
+
 ENV_BASE_URL = "OPENAI_BASE_URL"
 ENV_API_KEY = "OPENAI_API_KEY"
 ENV_MODEL = "OPENAI_MODEL"
@@ -31,14 +23,12 @@ ENV_TIMEOUT = "OPENAI_TIMEOUT"
 ENV_ATTEMPTS = "OPENAI_MAX_ATTEMPTS"
 ENV_DISABLE_THINKING = "OPENAI_DISABLE_THINKING"
 
-# The engine this worker plays for.
+
 DEFAULT_ENGINE_ID = "llm"
 
 
 @dataclass(frozen=True)
 class Settings:
-    """The parameters of one LLM worker."""
-
     mygo_url: str
     engine_token: str
     engine_id: str
@@ -56,7 +46,6 @@ class Settings:
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
-        """Read the settings from the environment."""
         source = os.environ if env is None else env
         connection = Connection.read(source, DEFAULT_ENGINE_ID)
 

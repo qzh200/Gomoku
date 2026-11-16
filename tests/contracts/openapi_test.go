@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// TestOpenAPIFreezesTheInterface checks that the contract file still lists
-// exactly the agreed endpoints, so the Python worker can be written against
-// the document alone.
 func TestOpenAPIFreezesTheInterface(t *testing.T) {
 	path := filepath.Join("..", "..", "api", "openapi.yaml")
 	data, err := os.ReadFile(path)
@@ -34,7 +31,6 @@ func TestOpenAPIFreezesTheInterface(t *testing.T) {
 		}
 	}
 
-	// The paths are relative to the /api/v1 prefix of the server.
 	if !strings.Contains(contract, "url: http://127.0.0.1:8080/api/v1") {
 		t.Fatalf("契约必须声明 /api/v1 前缀")
 	}

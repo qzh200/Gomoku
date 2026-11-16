@@ -15,9 +15,6 @@ import (
 	httpapi "mygo/internal/transport/http"
 )
 
-// TestUIGameIsClaimableByAWorker checks that a game created through the
-// application services, the way the interface creates it, is picked up by a
-// Python worker over the API.
 func TestUIGameIsClaimableByAWorker(t *testing.T) {
 	python, err := exec.LookPath("python")
 	if err != nil {
@@ -40,7 +37,6 @@ func TestUIGameIsClaimableByAWorker(t *testing.T) {
 	claimService := application.NewClaimService(coord)
 	server := httptestServer(t, httpapi.NewServer(gameService, moveService, claimService, registry).Handler())
 
-	// 界面用应用服务创建棋局：AI 执白。
 	result, err := gameService.Create("", application.CreateGameRequest{
 		Mode: gomoku.ModeHumanVsAI,
 		Players: map[string]application.CreatePlayer{
@@ -53,7 +49,6 @@ func TestUIGameIsClaimableByAWorker(t *testing.T) {
 	}
 	gameID := result.Game.ID
 
-	// 人类先落子，AI 的回合随后开放。
 	human := application.Caller{Kind: application.CallerOwner, OwnerTokenHash: auth.HashToken(result.OwnerToken)}
 	if _, err := moveService.Submit(gameID, human, application.SubmitMoveRequest{
 		Row: 7, Col: 7, ExpectedVersion: 0,

@@ -1,6 +1,3 @@
-// Package ui is the desktop interface of MyGo. It draws the board with the
-// MyGo native painter and reads the game state through the application
-// services.
 package ui
 
 import (
@@ -12,8 +9,6 @@ import (
 	"mygo/internal/domain/gomoku"
 )
 
-// Board geometry. The board scales with the window; the gutter holds the
-// coordinate labels.
 const (
 	boardGutter  = 24.0
 	boardMinSize = 420.0
@@ -26,35 +21,27 @@ const (
 	shadowRadius = 3.0
 )
 
-// columnLabels are the letters of the columns, from left to right.
 var columnLabels = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"}
 
-// rowLabels are the numbers of the rows, from top to bottom.
 var rowLabels = []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"}
 
-// starSpots are the indices of the star points of a 15x15 board.
 var starSpots = [5][2]int{{3, 3}, {3, 11}, {7, 7}, {11, 3}, {11, 11}}
 
-// geometry is the layout of one painted board.
 type geometry struct {
-	// Size is the size of the board in DIPs.
 	Size float32
-	// Cell is the distance between two grid lines.
+
 	Cell float32
-	// OriginX and OriginY are the coordinates of the first grid line inside
-	// the board.
+
 	OriginX float32
 	OriginY float32
 }
 
-// BoardView draws the board and reports the cell the user picked.
 type BoardView struct {
-	// Game is the snapshot to draw.
 	Game *gomoku.Game
-	// HoverRow and HoverCol are the cell under the pointer, -1 when none.
+
 	HoverRow int
 	HoverCol int
-	// OnPick is called with a cell when the user clicks it.
+
 	OnPick func(row, col int)
 
 	wood     mygo.Color
@@ -69,16 +56,14 @@ type BoardView struct {
 	accent   mygo.Color
 	labelW   map[string]float32
 	labelH   float32
-	// rect is where the board was painted last, in window DIPs.
+
 	rect mygo.Rect
 }
 
-// newBoardView returns a board view.
 func newBoardView() *BoardView {
 	return &BoardView{HoverRow: -1, HoverCol: -1, labelW: map[string]float32{}}
 }
 
-// applyTheme takes the board colors from the Lobe theme tokens.
 func (b *BoardView) applyTheme(tk *theme.Tokens) {
 	b.wood = mygo.RGB(214, 178, 128)
 	b.line = mygo.RGB(120, 88, 52)
@@ -95,7 +80,6 @@ func (b *BoardView) applyTheme(tk *theme.Tokens) {
 	}
 }
 
-// View builds the board element. It draws the board and takes the clicks.
 func (b *BoardView) View(c *mygo.Context, size float32) mygo.Element {
 	geo := geometryOf(size)
 	b.measureLabels(c)
@@ -119,8 +103,6 @@ func (b *BoardView) View(c *mygo.Context, size float32) mygo.Element {
 	return board
 }
 
-// measureLabels measures the coordinate labels once per frame, so the paint
-// callback only draws.
 func (b *BoardView) measureLabels(c *mygo.Context) {
 	for _, label := range columnLabels {
 		if _, ok := b.labelW[label]; ok {
@@ -132,7 +114,6 @@ func (b *BoardView) measureLabels(c *mygo.Context) {
 	}
 }
 
-// geometryOf returns the layout of a board of the given size.
 func geometryOf(size float32) geometry {
 	grid := size - 2*boardGutter
 	cell := grid / 14
@@ -144,8 +125,6 @@ func geometryOf(size float32) geometry {
 	}
 }
 
-// cellAt maps a pointer position inside the board to a cell. It returns -1
-// when the position is outside the grid.
 func (b *BoardView) cellAt(geo geometry, x, y float32) (int, int) {
 	if x < 0 || y < 0 || x > geo.Size || y > geo.Size {
 		return -1, -1
@@ -158,8 +137,6 @@ func (b *BoardView) cellAt(geo geometry, x, y float32) (int, int) {
 	return row, col
 }
 
-// paint draws the board, the grid, the labels, the stones and the hovered
-// cell.
 func (b *BoardView) paint(p *mygo.Painter, r mygo.Rect, geo geometry) {
 	b.rect = r
 	p.Fill(r, b.wood, boardRadius)
@@ -201,7 +178,6 @@ func (b *BoardView) paint(p *mygo.Painter, r mygo.Rect, geo geometry) {
 	}
 }
 
-// hoverCellFree reports whether the hovered cell can take a stone.
 func (b *BoardView) hoverCellFree() bool {
 	if b.Game == nil || b.HoverRow < 0 || b.HoverCol < 0 {
 		return false
@@ -209,7 +185,6 @@ func (b *BoardView) hoverCellFree() bool {
 	return b.Game.Board[b.HoverRow][b.HoverCol] == 0
 }
 
-// paintLabels draws the column letters and the row numbers.
 func (b *BoardView) paintLabels(p *mygo.Painter, r mygo.Rect, geo geometry) {
 	first := r.X + geo.OriginX
 	top := r.Y + geo.OriginY
@@ -223,12 +198,10 @@ func (b *BoardView) paintLabels(p *mygo.Painter, r mygo.Rect, geo geometry) {
 	}
 }
 
-// paintLabel draws one label.
 func (b *BoardView) paintLabel(p *mygo.Painter, text string, x, y float32, color mygo.Color) {
 	p.Text(x, y, text, labelSize, color)
 }
 
-// paintWinningLine draws the line of five that ended the game.
 func (b *BoardView) paintWinningLine(p *mygo.Painter, r mygo.Rect, geo geometry) {
 	if b.Game.Status != gomoku.StatusFinished || b.Game.Winner == nil {
 		return
@@ -237,7 +210,7 @@ func (b *BoardView) paintWinningLine(p *mygo.Painter, r mygo.Rect, geo geometry)
 	if len(line) < 2 {
 		return
 	}
-	// The line runs between the stones, so it never covers one.
+
 	radius := geo.Cell * stoneRatio
 	for i := 1; i < len(line); i++ {
 		from := mygo.Point{
@@ -261,7 +234,6 @@ func (b *BoardView) paintWinningLine(p *mygo.Painter, r mygo.Rect, geo geometry)
 	}
 }
 
-// paintLastMove marks the stone of the last move.
 func (b *BoardView) paintLastMove(p *mygo.Painter, r mygo.Rect, geo geometry, row, col int) {
 	cx := r.X + geo.OriginX + float32(col)*geo.Cell
 	cy := r.Y + geo.OriginY + float32(row)*geo.Cell
@@ -269,7 +241,6 @@ func (b *BoardView) paintLastMove(p *mygo.Painter, r mygo.Rect, geo geometry, ro
 	p.FillPath((&mygo.Path{}).Circle(cx, cy, radius), b.accent)
 }
 
-// paintStone draws one stone, or its ghost while the pointer hovers.
 func (b *BoardView) paintStone(p *mygo.Painter, r mygo.Rect, geo geometry, row, col, cell int, ghost bool) {
 	cx := r.X + geo.OriginX + float32(col)*geo.Cell
 	cy := r.Y + geo.OriginY + float32(row)*geo.Cell
@@ -300,7 +271,6 @@ func (b *BoardView) paintStone(p *mygo.Painter, r mygo.Rect, geo geometry, row, 
 	}
 }
 
-// stoneColor returns the color of a stone of the given player.
 func stoneColor(player gomoku.Player) mygo.Color {
 	if player == gomoku.PlayerBlack {
 		return mygo.RGB(16, 16, 20)

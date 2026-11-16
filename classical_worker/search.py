@@ -1,16 +1,3 @@
-"""The search: iterative deepening with a principal variation search.
-
-Every node asks the same question ("how good is this for the side to move?")
-and the answer changes sign on the way back. The first move is searched with a
-full window; the rest get a zero window and are re-searched only when they
-beat alpha. The transposition table keeps the value of a position reached by
-another order, and the threat ordering puts the forced moves first, which is
-what makes the windows close early.
-
-VCF and VCT run before the main search: a forced win found there is played at
-once, and the main search keeps the fallback when they find nothing.
-"""
-
 from __future__ import annotations
 
 import time
@@ -29,21 +16,19 @@ from .tt import (
     to_table,
 )
 
-# A value above every mate score, used for the open window.
+
 INFINITY = 10**10
 
-# The share of the budget the forced searches may use.
+
 DEFAULT_VCF_BUDGET = 0.10
 DEFAULT_VCT_BUDGET = 0.0
 
 
 class SearchTimeout(Exception):
-    """The time budget of the search ran out."""
+    pass
 
 
 class Searcher:
-    """Picks a move with iterative deepening and a principal variation search."""
-
     def __init__(
         self,
         depth: int = 8,
@@ -61,8 +46,8 @@ class Searcher:
         self.vcf_budget = max(0.0, vcf_budget)
         self.vct_budget = max(0.0, vct_budget)
         self.max_nodes = max_nodes
-        # The table, the history and the killers live across turns. The keys
-        # are complete positions, so a hit is never stale.
+
+
         self.table = TranspositionTable(tt_entries)
         self.history: dict[tuple[int, int, int], int] = {}
         self.killers: dict[int, list[tuple[int, int]]] = {}
@@ -79,7 +64,6 @@ class Searcher:
         width: int | None = None,
         time_budget: float | None = None,
     ) -> tuple[int, int] | None:
-        """Return the move to play, or None when the board is full."""
         if position.is_full():
             return None
         if not position.stones:
@@ -100,7 +84,7 @@ class Searcher:
         if not neighbours:
             return None
 
-        # A five now, and a five of the opponent, are decided without search.
+
         own_five = [cell for cell in neighbours if position.wins_with(*cell, player)]
         if own_five:
             return own_five[0]
@@ -110,8 +94,7 @@ class Searcher:
         if len(opponent_five) == 1:
             return opponent_five[0]
 
-        # Two fives cannot both be blocked. Only a win of our own saves the
-        # position, so look for one before returning a lost move.
+
         if len(opponent_five) >= 2:
             move = VCF(max_depth=max(4, max_depth)).best_move(
                 position, player, min(deadline, time.monotonic() + budget * self.vcf_budget)
@@ -150,10 +133,8 @@ class Searcher:
                 break
         return best
 
-    # -- the tree ---------------------------------------------------------
 
     def _root(self, position: Position, player: int, depth: int) -> tuple[int, tuple[int, int]]:
-        """Search every root move and return the best value and move."""
         moves = forced_moves(
             position,
             player,
@@ -178,7 +159,6 @@ class Searcher:
                     if value > alpha:
                         value = -self._pvs(position, depth - 1, -INFINITY, -alpha, other(player), 1)
             finally:
-                # A timed out search must leave the board as it found it.
                 position.undo(undo)
             if value > best_value:
                 best_value, best_move = value, move
@@ -197,7 +177,6 @@ class Searcher:
         player: int,
         ply: int,
     ) -> int:
-        """Return the value of the position for the side to move."""
         self._tick()
         if depth <= 0:
             return position.evaluate(player)
@@ -247,7 +226,6 @@ class Searcher:
                     if alpha < value < beta:
                         value = -self._pvs(position, depth - 1, -beta, -alpha, other(player), ply + 1)
             finally:
-                # A timed out search must leave the board as it found it.
                 position.undo(undo)
             if value > best:
                 best, best_move = value, move
@@ -274,7 +252,6 @@ class Searcher:
         return best
 
     def _tick(self) -> None:
-        """Count a node and stop when the budget is spent."""
         self.nodes += 1
         if self.max_nodes is not None and self.nodes >= self.max_nodes:
             raise SearchTimeout

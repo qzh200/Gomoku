@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-// TestMockWorkerFinishesAGame runs the reference Python workers against the
-// API and checks that they play a whole game on their own.
 func TestMockWorkerFinishesAGame(t *testing.T) {
 	python, err := exec.LookPath("python")
 	if err != nil {

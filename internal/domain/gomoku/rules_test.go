@@ -94,9 +94,7 @@ func TestDrawWhenBoardIsFull(t *testing.T) {
 	game := NewGame("game_001", ModeHumanVsHuman,
 		PlayerConfig{Type: TypeHuman, Config: map[string]any{}},
 		PlayerConfig{Type: TypeHuman, Config: map[string]any{}})
-	// A full board without a winning line ends the game as a draw. The cells
-	// are filled directly because alternating turns always produce a line of
-	// five before the board is full.
+
 	for row := range BoardSize {
 		for col := range BoardSize {
 			player := Black

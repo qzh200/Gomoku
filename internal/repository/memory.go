@@ -7,13 +7,11 @@ import (
 	"mygo/internal/domain/gomoku"
 )
 
-// Errors returned by the memory repository.
 var (
 	ErrAlreadyExists = errors.New("game already exists")
 	ErrNotFound      = errors.New("game not found")
 )
 
-// memoryGames is an in-memory GameRepository.
 type memoryGames struct {
 	mu     sync.RWMutex
 	games  map[string]*gomoku.Game
@@ -21,7 +19,6 @@ type memoryGames struct {
 	order  []string
 }
 
-// NewMemoryGames returns an empty in-memory game repository.
 func NewMemoryGames() GameRepository {
 	return &memoryGames{
 		games:  make(map[string]*gomoku.Game),
@@ -97,13 +94,11 @@ func (m *memoryGames) OwnerTokenHash(id string) (string, bool) {
 	return hash, ok
 }
 
-// memoryIdempotency is an in-memory IdempotencyStore.
 type memoryIdempotency struct {
 	mu      sync.Mutex
 	records map[string]IdempotencyRecord
 }
 
-// NewMemoryIdempotency returns an empty in-memory idempotency store.
 func NewMemoryIdempotency() IdempotencyStore {
 	return &memoryIdempotency{records: make(map[string]IdempotencyRecord)}
 }

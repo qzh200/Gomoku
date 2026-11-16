@@ -1,11 +1,3 @@
-"""The settings every MyGo worker shares.
-
-The values come from the process environment; a ``.env`` file fills the
-environment first. The bearer token of the engine is not expected in the
-file: MyGo writes it to the runtime registry when it starts, and the worker
-reads it from there.
-"""
-
 from __future__ import annotations
 
 import json
@@ -13,13 +5,13 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-# The address of a local MyGo and the file it writes the tokens to.
+
 DEFAULT_MYGO_URL = "http://127.0.0.1:8080/api/v1"
 DEFAULT_RUNTIME_CONFIG = "configs/engines.runtime.json"
 DEFAULT_WAIT_SECONDS = 20
 DEFAULT_EXTEND_SECONDS = 120
 
-# The names of the environment variables of the shared settings.
+
 ENV_MYGO_URL = "MYGO_URL"
 ENV_ENGINE_TOKEN = "MYGO_ENGINE_TOKEN"
 ENV_ENGINE_ID = "MYGO_ENGINE_ID"
@@ -30,15 +22,10 @@ ENV_EXTEND_SECONDS = "MYGO_LEASE_EXTEND_SECONDS"
 
 
 class ConfigError(RuntimeError):
-    """A setting is missing or cannot be read."""
+    pass
 
 
 def parse_dotenv(text: str) -> dict[str, str]:
-    """Read the ``KEY=VALUE`` pairs of a .env file.
-
-    Blank lines and lines starting with ``#`` are ignored. A value may be
-    quoted; the quotes are removed. ``export`` in front of a key is allowed.
-    """
     values: dict[str, str] = {}
     for number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
@@ -60,11 +47,6 @@ def parse_dotenv(text: str) -> dict[str, str]:
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
-    """Fill the environment from a .env file.
-
-    The environment wins over the file, so a parameter given on the command
-    line of the shell is not overwritten.
-    """
     if not path.is_file():
         return {}
     values = parse_dotenv(path.read_text(encoding="utf-8"))
@@ -74,7 +56,6 @@ def load_dotenv(path: Path) -> dict[str, str]:
 
 
 def worker_dotenv_candidates(package: str, explicit: str | None) -> list[Path]:
-    """Return the .env files of one worker package, in order."""
     if explicit:
         return [Path(explicit)]
     here = Path(__file__).resolve().parent.parent
@@ -82,7 +63,6 @@ def worker_dotenv_candidates(package: str, explicit: str | None) -> list[Path]:
 
 
 def runtime_config_candidates(explicit: str | None = None) -> list[Path]:
-    """Return the files MyGo writes the engine tokens to, in order."""
     if explicit:
         return [Path(explicit)]
     root = Path(__file__).resolve().parent.parent
@@ -90,12 +70,6 @@ def runtime_config_candidates(explicit: str | None = None) -> list[Path]:
 
 
 def read_runtime_token(path: Path, engine_id: str) -> str:
-    """Read the bearer token of an engine from the runtime registry.
-
-    MyGo writes that file when it starts, so the worker learns its token
-    without anybody copying it. An empty string means the file holds no token
-    for the engine.
-    """
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -115,7 +89,6 @@ def read_runtime_token(path: Path, engine_id: str) -> str:
 
 
 def find_engine_token(engine_id: str, explicit: str | None = None) -> str:
-    """Return the token of the engine, from the runtime registry."""
     for candidate in runtime_config_candidates(explicit):
         token = read_runtime_token(candidate, engine_id)
         if token:
@@ -124,11 +97,6 @@ def find_engine_token(engine_id: str, explicit: str | None = None) -> str:
 
 
 def resolve_engine_token(source: dict[str, str], engine_id: str) -> str:
-    """Return the token of the engine, or raise when there is none.
-
-    An explicit ``MYGO_ENGINE_TOKEN`` wins; otherwise the runtime registry of
-    MyGo is read, which is what makes the token automatic.
-    """
     token = source.get(ENV_ENGINE_TOKEN, "").strip()
     if token:
         return token
@@ -144,8 +112,6 @@ def resolve_engine_token(source: dict[str, str], engine_id: str) -> str:
 
 @dataclass(frozen=True)
 class Connection:
-    """How a worker reaches MyGo."""
-
     mygo_url: str
     engine_token: str
     engine_id: str
@@ -155,8 +121,6 @@ class Connection:
 
     @classmethod
     def read(cls, source: dict[str, str], default_engine_id: str) -> "Connection":
-        """Read the connection settings of a worker."""
-
         def text(name: str, fallback: str) -> str:
             value = source.get(name, "").strip()
             return value or fallback

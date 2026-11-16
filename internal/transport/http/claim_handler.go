@@ -9,7 +9,6 @@ import (
 	"mygo/internal/auth"
 )
 
-// submitMoveRequest is the wire format of the unified move request.
 type submitMoveRequest struct {
 	Row             int    `json:"row"`
 	Col             int    `json:"col"`
@@ -17,7 +16,6 @@ type submitMoveRequest struct {
 	ClaimID         string `json:"claim_id"`
 }
 
-// engineResponse is one engine of the engine registry.
 type engineResponse struct {
 	EngineID     string     `json:"engine_id"`
 	DisplayName  string     `json:"display_name"`
@@ -25,23 +23,19 @@ type engineResponse struct {
 	LastActiveAt *time.Time `json:"last_active_at"`
 }
 
-// engineListResponse is the wire format of the engine registry.
 type engineListResponse struct {
 	Items []engineResponse `json:"items"`
 }
 
-// claimRequest is the wire format of the turn claim request.
 type claimRequest struct {
 	WorkerID    string `json:"worker_id"`
 	WaitSeconds int    `json:"wait_seconds"`
 }
 
-// renewRequest is the wire format of the lease renewal request.
 type renewRequest struct {
 	ExtendSeconds int `json:"extend_seconds"`
 }
 
-// handleSubmitMove applies a move of a human or an AI.
 func (s *Server) handleSubmitMove(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	caller, ok := s.callerFor(w, r)
@@ -72,7 +66,6 @@ func (s *Server) handleSubmitMove(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, result)
 }
 
-// handleListEngines returns the engine registry.
 func (s *Server) handleListEngines(w http.ResponseWriter, r *http.Request) {
 	engines := s.auth.Engines()
 	items := make([]engineResponse, 0, len(engines))
@@ -87,7 +80,6 @@ func (s *Server) handleListEngines(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, engineListResponse{Items: items})
 }
 
-// handleClaimTurn long polls for a turn of the calling engine.
 func (s *Server) handleClaimTurn(w http.ResponseWriter, r *http.Request) {
 	engine, ok := s.engineCaller(w, r)
 	if !ok {
@@ -123,7 +115,6 @@ func (s *Server) handleClaimTurn(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, claim)
 }
 
-// handleRenewClaim extends the lease of a claim.
 func (s *Server) handleRenewClaim(w http.ResponseWriter, r *http.Request) {
 	engine, ok := s.engineCaller(w, r)
 	if !ok {
@@ -145,7 +136,6 @@ func (s *Server) handleRenewClaim(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleReleaseClaim drops the lease of a claim.
 func (s *Server) handleReleaseClaim(w http.ResponseWriter, r *http.Request) {
 	engine, ok := s.engineCaller(w, r)
 	if !ok {
@@ -158,8 +148,6 @@ func (s *Server) handleReleaseClaim(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// callerFor resolves the caller of a move request. A bearer token identifies
-// an AI engine, an owner token identifies the owner of a game.
 func (s *Server) callerFor(w http.ResponseWriter, r *http.Request) (application.Caller, bool) {
 	if token := auth.BearerToken(r.Header.Get("Authorization")); token != "" {
 		engine, ok := s.auth.EngineByToken(token)
@@ -177,8 +165,6 @@ func (s *Server) callerFor(w http.ResponseWriter, r *http.Request) (application.
 	return application.Caller{}, false
 }
 
-// engineCaller resolves the engine of a request. The engine comes from the
-// credential, never from a request parameter.
 func (s *Server) engineCaller(w http.ResponseWriter, r *http.Request) (*auth.Engine, bool) {
 	token := auth.BearerToken(r.Header.Get("Authorization"))
 	if token == "" {

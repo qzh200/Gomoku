@@ -10,8 +10,6 @@ import (
 	"mygo/internal/domain/gomoku"
 )
 
-// TestClickOnBoardPlacesAStone drives the board through the tester and checks
-// that a click lands on the cell the pointer is over.
 func TestClickOnBoardPlacesAStone(t *testing.T) {
 	app := newTestApp(t)
 	app.st.modeIndex = 2
@@ -25,7 +23,7 @@ func TestClickOnBoardPlacesAStone(t *testing.T) {
 	if rect.W == 0 {
 		t.Fatalf("棋盘没有绘制")
 	}
-	// 点击 E7：第五列，第七行。
+
 	col, row := 4, 6
 	x := rect.X + geo.OriginX + float32(col)*geo.Cell
 	y := rect.Y + geo.OriginY + float32(row)*geo.Cell
@@ -43,8 +41,6 @@ func TestClickOnBoardPlacesAStone(t *testing.T) {
 	}
 }
 
-// TestClickOutsideTheGridIsIgnored checks that a click outside the grid does
-// not place a stone.
 func TestClickOutsideTheGridIsIgnored(t *testing.T) {
 	app := newTestApp(t)
 	app.st.modeIndex = 2
@@ -55,7 +51,7 @@ func TestClickOutsideTheGridIsIgnored(t *testing.T) {
 
 	geo := geometryOf(app.board.rect.W)
 	rect := app.board.rect
-	// 棋盘的最左上是标签区，不是格子。
+
 	tester.ClickAt(rect.X+2, rect.Y+2)
 	tester.Advance(200 * time.Millisecond)
 
@@ -68,7 +64,6 @@ func TestClickOutsideTheGridIsIgnored(t *testing.T) {
 	_ = geo
 }
 
-// TestHoverPreviewFollowsThePointer checks that the hovered cell is tracked.
 func TestHoverPreviewFollowsThePointer(t *testing.T) {
 	app := newTestApp(t)
 	app.st.modeIndex = 2
@@ -90,8 +85,6 @@ func TestHoverPreviewFollowsThePointer(t *testing.T) {
 	}
 }
 
-// TestAISidePickerChoosesTheSide checks that the interface can start a game
-// where the AI takes the black stones.
 func TestAISidePickerChoosesTheSide(t *testing.T) {
 	app := newTestApp(t)
 	app.st.aiIsBlack = true
@@ -114,8 +107,6 @@ func TestAISidePickerChoosesTheSide(t *testing.T) {
 	}
 }
 
-// TestAIGameUsesTheChosenFirstEngine checks that an AI game gives the black
-// stones to the engine picked as the first mover.
 func TestAIGameUsesTheChosenFirstEngine(t *testing.T) {
 	app := newTestApp(t)
 	app.st.modeIndex = 1
@@ -140,8 +131,6 @@ func TestAIGameUsesTheChosenFirstEngine(t *testing.T) {
 	}
 }
 
-// TestStartButtonStartsAGame clicks the button in the sidebar and checks that
-// a game starts.
 func TestStartButtonStartsAGame(t *testing.T) {
 	app := newTestApp(t)
 	tester := mygoui.NewTester(app.View(), 1180, 800)
@@ -160,8 +149,6 @@ func TestStartButtonStartsAGame(t *testing.T) {
 	}
 }
 
-// TestButtonsShowTheirLabelOnce checks that a button does not render its
-// label twice.
 func TestButtonsShowTheirLabelOnce(t *testing.T) {
 	app := newTestApp(t)
 	app.st.modeIndex = 1
@@ -180,8 +167,6 @@ func TestButtonsShowTheirLabelOnce(t *testing.T) {
 	}
 }
 
-// TestHistoryShowsEveryMove checks that the move list holds every move of the
-// game, with its number and its place.
 func TestHistoryShowsEveryMove(t *testing.T) {
 	app := newTestApp(t)
 	app.st.modeIndex = 2

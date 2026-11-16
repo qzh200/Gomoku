@@ -1,14 +1,3 @@
-"""Self-play: the games a network plays against itself, and the training.
-
-A game is played with the search of the current network. Every move of the
-game gives one training example: the planes of the position, the distribution
-the search put on the moves and the result of the game for the side to move.
-
-The examples are kept in a buffer of the last games and are read in batches.
-The policy of a position is trained to match the distribution of the search
-and the value to match the result of the game.
-"""
-
 from __future__ import annotations
 
 import random
@@ -22,54 +11,45 @@ from .features import TRANSFORMS, encode, legal_mask, transform_planes, transfor
 from .mcts import MCTS, row_col_of
 from .network import GomokuNet, save, train_batch
 
-# The number of moves that are played with a temperature of one; after that
-# the game is played as it would be against a human.
+
 DEFAULT_TEMPERATURE_MOVES = 12
 
-# The share of the examples that get one of the eight symmetries.
+
 DEFAULT_AUGMENT = True
 
 
 @dataclass
 class Example:
-    """One position of a self-play game and what should be learned from it."""
-
     planes: list[list[list[float]]]
     policy: list[float]
     legal: list[float]
     value: float = 0.0
-    # The cell the teacher would have played; only the warm start fills it.
+
     teacher_cell: int = -1
 
 
 @dataclass
 class ReplayBuffer:
-    """The examples of the last games, with a fixed size."""
-
     examples: list[Example] = field(default_factory=list)
     capacity: int = 60_000
 
     def add(self, example: Example) -> None:
-        """Add one example and drop the oldest ones when the buffer is full."""
         self.examples.append(example)
         if len(self.examples) > self.capacity:
             del self.examples[: len(self.examples) - self.capacity]
 
     def sample(self, count: int, rng: random.Random) -> list[Example]:
-        """Return a random batch of examples."""
         if not self.examples:
             return []
         count = min(count, len(self.examples))
         return rng.sample(self.examples, count)
 
     def save(self, path: str | Path) -> None:
-        """Write the examples to a file."""
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         torch.save(self.examples, str(target))
 
     def load(self, path: str | Path) -> None:
-        """Read the examples from a file."""
         source = Path(path)
         if not source.is_file():
             return
@@ -78,16 +58,12 @@ class ReplayBuffer:
 
 @dataclass
 class GameResult:
-    """The outcome of one self-play game."""
-
     winner: int | None
     moves: int
     examples: list[Example]
 
 
 class SelfPlay:
-    """Plays games with the search and trains the network on them."""
-
     def __init__(
         self,
         model: GomokuNet,
@@ -122,7 +98,6 @@ class SelfPlay:
         )
 
     def play_game(self) -> GameResult:
-        """Play one game against the network itself."""
         board = Board()
         player = BLACK
         examples: list[Example] = []
@@ -157,8 +132,7 @@ class SelfPlay:
                 break
             player = other(player)
 
-        # The value of a position is seen from the side of the player to move
-        # at that position: the winner gets one and the loser minus one.
+
         for example, side in zip(examples, sides):
             if winner is None:
                 example.value = 0.0
@@ -171,10 +145,6 @@ class SelfPlay:
 def augment(
     example: Example, rng: random.Random
 ) -> tuple[list[list[list[float]]], list[float], list[float]]:
-    """Return the example under one of the eight symmetries.
-
-    The value does not change: a rotated board is the same game.
-    """
     index = rng.randrange(len(TRANSFORMS))
     if index == 0:
         return example.planes, example.policy, example.legal
@@ -195,7 +165,6 @@ def train(
     rng: random.Random | None = None,
     log: bool = False,
 ) -> list[float]:
-    """Train the network on the examples of the buffer."""
     picker = rng or random.Random(0)
     losses: list[float] = []
     for _ in range(steps):
@@ -232,7 +201,6 @@ def train(
 
 
 def save_checkpoint(model: GomokuNet, path: str | Path) -> None:
-    """Write the weights of the network; the folder is made if needed."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     save(model, str(target))
@@ -244,11 +212,6 @@ def evaluate(
     device: torch.device,
     batch_size: int = 128,
 ) -> tuple[float, float]:
-    """Return the policy loss and the value loss of a set of examples.
-
-    The examples are not trained on, so the numbers say how much the network
-    really learned instead of how much it memorised.
-    """
     if not examples:
         return float("nan"), float("nan")
     policy_loss = 0.0

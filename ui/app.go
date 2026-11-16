@@ -14,14 +14,11 @@ import (
 	"mygo/internal/domain/gomoku"
 )
 
-// state is the interface state. It never holds the authoritative game state,
-// only the snapshot the view draws and the tokens the interface owns.
 type state struct {
 	modeIndex   int
 	engineIndex int
 	aiIsBlack   bool
-	// firstEngineIndex and secondEngineIndex pick the engines of the two
-	// sides of an AI game; the first one takes the black stones.
+
 	firstEngineIndex  int
 	secondEngineIndex int
 
@@ -34,7 +31,6 @@ type state struct {
 	noticeKind noticeKind
 }
 
-// noticeKind tells how a notice is shown.
 type noticeKind int
 
 const (
@@ -43,15 +39,12 @@ const (
 	noticeError
 )
 
-// engineInfo describes one engine of the registry for the interface.
 type engineInfo struct {
 	ID      string
 	Name    string
 	Enabled bool
 }
 
-// App is the desktop interface of MyGo. It reads the game through the
-// application services and never changes the authoritative state itself.
 type App struct {
 	games   *application.GameService
 	moves   *application.MoveService
@@ -61,11 +54,10 @@ type App struct {
 	st    state
 	board *BoardView
 	win   *mygo.Window
-	// list keeps the place of the move list, so it follows the last move.
+
 	list mygoui.ListState
 }
 
-// New builds the interface over the application services.
 func New(games *application.GameService, moves *application.MoveService, registry *auth.Registry) *App {
 	app := &App{games: games, moves: moves, board: newBoardView()}
 	for _, engine := range registry.Engines() {
@@ -73,27 +65,22 @@ func New(games *application.GameService, moves *application.MoveService, registr
 	}
 	app.st.status = "请选择模式并开始一局新棋"
 	if len(app.engines) > 1 {
-		// The second engine answers the first one by default.
+
 		app.st.secondEngineIndex = 1
 	}
 	return app
 }
 
-// View returns the view function of the window.
 func (a *App) View() func(c *mygoui.Context) {
 	return func(c *mygoui.Context) { a.build(c) }
 }
 
-// AttachWindow gives the interface the window it draws in, so it can ask for
-// a repaint from a background goroutine.
 func (a *App) AttachWindow(win *mygo.Window) {
 	a.mu.Lock()
 	a.win = win
 	a.mu.Unlock()
 }
 
-// StartPolling refreshes the snapshot of the current game until the window
-// is closed.
 func (a *App) StartPolling() {
 	go func() {
 		ticker := time.NewTicker(250 * time.Millisecond)
@@ -115,21 +102,18 @@ func (a *App) StartPolling() {
 	}()
 }
 
-// Mode returns the selected game mode.
 func (a *App) Mode() gomoku.Mode {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return modeValues[a.st.modeIndex]
 }
 
-// AIIsBlack reports whether the AI takes the black stones in a human game.
 func (a *App) AIIsBlack() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.st.aiIsBlack
 }
 
-// EngineID returns the engine selected for the AI side.
 func (a *App) EngineID() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -139,8 +123,6 @@ func (a *App) EngineID() string {
 	return a.engines[a.st.engineIndex%len(a.engines)].ID
 }
 
-// FirstEngineID returns the engine that takes the black stones and moves
-// first in an AI game.
 func (a *App) FirstEngineID() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -150,8 +132,6 @@ func (a *App) FirstEngineID() string {
 	return a.engines[a.st.firstEngineIndex%len(a.engines)].ID
 }
 
-// SecondEngineID returns the engine that takes the white stones in an AI
-// game.
 func (a *App) SecondEngineID() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -161,7 +141,6 @@ func (a *App) SecondEngineID() string {
 	return a.engines[a.st.secondEngineIndex%len(a.engines)].ID
 }
 
-// newGame creates a game through the application service.
 func (a *App) newGame() {
 	mode := a.Mode()
 	engine := a.EngineID()
@@ -198,7 +177,6 @@ func (a *App) newGame() {
 	a.refresh()
 }
 
-// pick applies a move of the human through the application service.
 func (a *App) pick(row, col int) {
 	a.mu.Lock()
 	game := a.st.game
@@ -218,7 +196,7 @@ func (a *App) pick(row, col int) {
 		ExpectedVersion: game.Version,
 	})
 	if err != nil {
-		// The board may be one poll behind the AI. Refresh once and retry.
+
 		if appErr, ok := err.(*application.Error); ok && appErr.Code == application.CodeVersionConflict {
 			a.refresh()
 			if fresh := a.snapshot(); fresh != nil && fresh.Version != game.Version {
@@ -243,7 +221,6 @@ func (a *App) pick(row, col int) {
 	a.refresh()
 }
 
-// togglePause pauses or resumes an AI game.
 func (a *App) togglePause() {
 	a.mu.Lock()
 	game := a.st.game
@@ -266,7 +243,6 @@ func (a *App) togglePause() {
 	a.mu.Unlock()
 }
 
-// refresh reloads the snapshot and the history of the current game.
 func (a *App) refresh() {
 	a.mu.Lock()
 	id := a.st.gameID
@@ -289,14 +265,12 @@ func (a *App) refresh() {
 	a.mu.Unlock()
 }
 
-// snapshot returns the current game snapshot.
 func (a *App) snapshot() *gomoku.Game {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.st.game
 }
 
-// setNotice shows a message in the interface.
 func (a *App) setNotice(kind noticeKind, message string) {
 	a.mu.Lock()
 	a.st.noticeKind = kind
@@ -304,7 +278,6 @@ func (a *App) setNotice(kind noticeKind, message string) {
 	a.mu.Unlock()
 }
 
-// setError shows an application error as a readable message.
 func (a *App) setError(err error) {
 	var appErr *application.Error
 	if !errors.As(err, &appErr) {
@@ -314,7 +287,6 @@ func (a *App) setError(err error) {
 	a.setNotice(noticeError, errorMessage(appErr.Code))
 }
 
-// errorMessage returns the message of an application error code.
 func errorMessage(code string) string {
 	switch code {
 	case application.CodeNotYourTurn:
@@ -338,7 +310,6 @@ func errorMessage(code string) string {
 	}
 }
 
-// playerLabel returns the Chinese name of a player color.
 func playerLabel(player gomoku.Player) string {
 	if player == gomoku.PlayerBlack {
 		return "黑棋"
@@ -346,7 +317,6 @@ func playerLabel(player gomoku.Player) string {
 	return "白棋"
 }
 
-// describeGame returns the status line of a game.
 func describeGame(game *gomoku.Game) string {
 	if game == nil {
 		return ""

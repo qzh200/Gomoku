@@ -9,11 +9,6 @@ import (
 	"time"
 )
 
-// TestClassicalWorkerFinishesAGame runs the real classical worker for both
-// sides of an AI game and checks that the game reaches its end.
-//
-// The worker is started twice, once per engine: the algorithm does not depend
-// on which engine the credential names.
 func TestClassicalWorkerFinishesAGame(t *testing.T) {
 	python, err := exec.LookPath("python")
 	if err != nil {

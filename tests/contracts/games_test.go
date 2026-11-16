@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// createGame creates a game and returns its id and owner token.
 func (h *harness) createGame(mode string, players map[string]any) (string, string) {
 	h.t.Helper()
 	status, data := h.do(http.MethodPost, "/api/v1/games", map[string]any{"mode": mode, "players": players}, h.localHeaders())
@@ -18,7 +17,6 @@ func (h *harness) createGame(mode string, players map[string]any) (string, strin
 	return game["id"].(string), token
 }
 
-// humanVsHuman returns the players of a human game.
 func humanVsHuman() map[string]any {
 	return map[string]any{
 		"black": map[string]any{"type": "human"},
@@ -26,7 +24,6 @@ func humanVsHuman() map[string]any {
 	}
 }
 
-// aiPlayers returns the players of a human vs AI game.
 func aiPlayers(engineID string) map[string]any {
 	return map[string]any{
 		"black": map[string]any{"type": "human"},

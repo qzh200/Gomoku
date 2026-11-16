@@ -14,7 +14,6 @@ import (
 	"mygo/internal/domain/gomoku"
 )
 
-// Panel and layout metrics.
 const (
 	sidebarWidth  = 284.0
 	historyWidth  = 248.0
@@ -24,7 +23,6 @@ const (
 	cardPadding   = 16.0
 )
 
-// The widths of the columns of the move table.
 const (
 	historyColumnGap   = 8.0
 	historyNumberWidth = 32.0
@@ -32,13 +30,10 @@ const (
 	historyPlaceWidth  = 44.0
 )
 
-// modeNames are the labels of the game modes.
 var modeNames = []string{"人机对战", "AI 对战", "人人对战"}
 
-// modeValues are the game modes in the order of modeNames.
 var modeValues = []gomoku.Mode{gomoku.ModeHumanVsAI, gomoku.ModeAIVsAI, gomoku.ModeHumanVsHuman}
 
-// build draws the whole window.
 func (a *App) build(c *mygo.Context) {
 	theme.Apply(c)
 	tk := theme.TokensOf(c)
@@ -60,7 +55,6 @@ func (a *App) build(c *mygo.Context) {
 	})
 }
 
-// buildToolbar draws the header of the window.
 func (a *App) buildToolbar(c *mygo.Context, tk *theme.Tokens) {
 	mygo.Row(c).Height(toolbarHeight).Padding(0, pagePadding).Gap(10).AlignItems(mygo.Center).Children(func() {
 		a.buildToolbarTitle(c)
@@ -70,7 +64,6 @@ func (a *App) buildToolbar(c *mygo.Context, tk *theme.Tokens) {
 	})
 }
 
-// buildToolbarTitle shows the name of the app and the game it shows.
 func (a *App) buildToolbarTitle(c *mygo.Context) {
 	a.mu.Lock()
 	game := a.st.game
@@ -95,7 +88,6 @@ func (a *App) buildThinking(c *mygo.Context) {
 	})
 }
 
-// buildStatus shows the state of the current game.
 func (a *App) buildStatus(c *mygo.Context, tk *theme.Tokens) {
 	a.mu.Lock()
 	game := a.st.game
@@ -113,7 +105,6 @@ func (a *App) buildStatus(c *mygo.Context, tk *theme.Tokens) {
 	display.Tag(c, status, display.TagProps{Color: color, Round: true})
 }
 
-// buildSidebar holds the game controls and the state of the game.
 func (a *App) buildSidebar(c *mygo.Context, tk *theme.Tokens) {
 	mygo.Column(c).Width(sidebarWidth).AlignSelf(mygo.Start).Gap(columnGap).Children(func() {
 		panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(16).Radius(tk.BorderRadiusLG)
@@ -132,7 +123,6 @@ func (a *App) buildSidebar(c *mygo.Context, tk *theme.Tokens) {
 	})
 }
 
-// buildModePicker lets the user pick the game mode.
 func (a *App) buildModePicker(c *mygo.Context) {
 	a.mu.Lock()
 	index := a.st.modeIndex
@@ -144,9 +134,6 @@ func (a *App) buildModePicker(c *mygo.Context) {
 	a.mu.Unlock()
 }
 
-// buildEnginePicker lets the user pick the engines of the game. A human
-// game picks the side and the engine of the AI; an AI game picks the engine
-// that moves first and the engine that answers.
 func (a *App) buildEnginePicker(c *mygo.Context) {
 	a.mu.Lock()
 	mode := modeValues[a.st.modeIndex]
@@ -170,8 +157,6 @@ func (a *App) buildEnginePicker(c *mygo.Context) {
 	}
 }
 
-// buildSingleEnginePicker shows one picker of the engines and stores the
-// chosen index.
 func (a *App) buildSingleEnginePicker(c *mygo.Context, label string, current func() int, store func(int)) {
 	display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: 12})
 	names := a.engineNames()
@@ -184,8 +169,6 @@ func (a *App) buildSingleEnginePicker(c *mygo.Context, label string, current fun
 	store(index % len(names))
 }
 
-// buildAIEnginePickers shows the pickers of an AI game: the engine that
-// moves first takes the black stones, the other one takes the white stones.
 func (a *App) buildAIEnginePickers(c *mygo.Context) {
 	names := a.engineNames()
 	if len(names) == 0 {
@@ -202,7 +185,6 @@ func (a *App) buildAIEnginePickers(c *mygo.Context) {
 	display.Text(c, "后手（白方）", display.TextProps{Type: display.TextSecondary, FontSize: 12})
 	action.Segmented(c, &second, names, action.SegmentedProps{Block: true})
 
-	// The two sides must not play with the same engine.
 	if first == second && len(names) > 1 {
 		second = (first + 1) % len(names)
 	}
@@ -212,7 +194,6 @@ func (a *App) buildAIEnginePickers(c *mygo.Context) {
 	a.mu.Unlock()
 }
 
-// engineNames returns the names of the registered engines.
 func (a *App) engineNames() []string {
 	names := make([]string, 0, len(a.engines))
 	for _, engine := range a.engines {
@@ -221,7 +202,6 @@ func (a *App) engineNames() []string {
 	return names
 }
 
-// buildAISidePicker lets the user pick the side the AI plays in a human game.
 func (a *App) buildAISidePicker(c *mygo.Context, mode gomoku.Mode) {
 	if mode != gomoku.ModeHumanVsAI {
 		return
@@ -241,7 +221,6 @@ func (a *App) buildAISidePicker(c *mygo.Context, mode gomoku.Mode) {
 	a.mu.Unlock()
 }
 
-// buildNewGameButton starts a new game.
 func (a *App) buildNewGameButton(c *mygo.Context) {
 	button := iconButton(c, lucide.Plus(), "开始新棋局", action.ButtonProps{Variant: action.Primary})
 	if button.Clicked() {
@@ -249,7 +228,6 @@ func (a *App) buildNewGameButton(c *mygo.Context) {
 	}
 }
 
-// buildPauseButton pauses or resumes an AI game.
 func (a *App) buildPauseButton(c *mygo.Context) {
 	a.mu.Lock()
 	game := a.st.game
@@ -269,7 +247,6 @@ func (a *App) buildPauseButton(c *mygo.Context) {
 	}
 }
 
-// buildResult shows the outcome of a finished game.
 func (a *App) buildResult(c *mygo.Context) {
 	a.mu.Lock()
 	game := a.st.game
@@ -291,21 +268,18 @@ func (a *App) buildResult(c *mygo.Context) {
 	feedback.Alert(c, title, feedback.AlertProps{Type: alertType, Variant: feedback.Soft})
 }
 
-// iconButton builds a button with an icon before its label. The button is
-// built without a label of its own, so the label appears once.
 func iconButton(c *mygo.Context, icon *mygo.SVG, label string, props action.ButtonProps) mygo.Element {
 	button := action.StyleButton(c, mygo.ButtonBase(c), "", props)
 	button.Children(func() {
 		mygo.Row(c).Gap(6).AlignItems(mygo.Center).Children(func() {
 			display.Icon(c, icon, display.IconProps{Size: display.IconSmall})
-			// The label takes the color of the button, not the one of the text.
+
 			mygo.Text(c, label)
 		})
 	})
 	return button
 }
 
-// buildNotice shows the last message of the interface.
 func (a *App) buildNotice(c *mygo.Context) {
 	a.mu.Lock()
 	kind := a.st.noticeKind
@@ -321,7 +295,6 @@ func (a *App) buildNotice(c *mygo.Context) {
 	feedback.Alert(c, notice, feedback.AlertProps{Type: alertType, Variant: feedback.Soft})
 }
 
-// buildGameInfo shows the mode, the players and the state of the game.
 func (a *App) buildGameInfo(c *mygo.Context, tk *theme.Tokens) {
 	a.mu.Lock()
 	game := a.st.game
@@ -344,7 +317,6 @@ func (a *App) buildGameInfo(c *mygo.Context, tk *theme.Tokens) {
 	})
 }
 
-// buildInfoRow shows one labeled value.
 func (a *App) buildInfoRow(c *mygo.Context, icon *mygo.SVG, label, value string) {
 	mygo.Row(c).Gap(8).AlignItems(mygo.Center).Children(func() {
 		display.Icon(c, icon, display.IconProps{Size: display.IconSmall})
@@ -354,7 +326,6 @@ func (a *App) buildInfoRow(c *mygo.Context, icon *mygo.SVG, label, value string)
 	})
 }
 
-// buildBoardArea draws the board, sized to the space the window leaves.
 func (a *App) buildBoardArea(c *mygo.Context, tk *theme.Tokens) {
 	a.mu.Lock()
 	game := a.st.game
@@ -371,14 +342,11 @@ func (a *App) buildBoardArea(c *mygo.Context, tk *theme.Tokens) {
 	})
 }
 
-// boardSize returns the size of the board for the current window. It is the
-// space the board card leaves for the board, so the board never overflows it.
 func (a *App) boardSize(c *mygo.Context) float32 {
 	width, height := c.Size()
 	return boardSizeFor(width, height)
 }
 
-// boardSizeFor returns the size of the board for a window of the given size.
 func boardSizeFor(width, height float32) float32 {
 	horizontal := width - sidebarWidth - historyWidth - 2*columnGap - 2*pagePadding - 2*cardPadding
 	vertical := height - toolbarHeight - 2*pagePadding - 2*cardPadding
@@ -390,7 +358,7 @@ func boardSizeFor(width, height float32) float32 {
 		size = boardMaxSize
 	}
 	if size < boardMinSize {
-		// A narrow window shrinks the board instead of letting it overflow.
+
 		size = boardMinSize
 		if horizontal < boardMinSize {
 			size = horizontal
@@ -402,9 +370,6 @@ func boardSizeFor(width, height float32) float32 {
 	return size
 }
 
-// buildHistory lists the moves of the current game as a table. The list is
-// virtualized, so a long game scrolls instead of overflowing the window, and
-// it follows the last move as the game goes on.
 func (a *App) buildHistory(c *mygo.Context, tk *theme.Tokens) {
 	a.mu.Lock()
 	history := a.st.history
@@ -430,7 +395,6 @@ func (a *App) buildHistory(c *mygo.Context, tk *theme.Tokens) {
 	})
 }
 
-// buildHistoryHeader shows the names of the columns of the move table.
 func (a *App) buildHistoryHeader(c *mygo.Context) {
 	mygo.Column(c).Gap(6).Children(func() {
 		mygo.Row(c).Gap(historyColumnGap).AlignItems(mygo.Center).Padding(0, 6).Children(func() {
@@ -442,8 +406,6 @@ func (a *App) buildHistoryHeader(c *mygo.Context) {
 	})
 }
 
-// buildHistoryRow shows one move: its number, the color of its stone and
-// where it was played.
 func (a *App) buildHistoryRow(c *mygo.Context, move gomoku.Move, last bool, tk *theme.Tokens) {
 	row := mygo.Row(c).Gap(historyColumnGap).AlignItems(mygo.Center).Padding(3, 6).Radius(6).Children(func() {
 		historyCell(c, historyNumberWidth, fmt.Sprintf("%d", move.Number),
@@ -460,14 +422,11 @@ func (a *App) buildHistoryRow(c *mygo.Context, move gomoku.Move, last bool, tk *
 	}
 }
 
-// historyCell shows one value of a row of the move table.
 func historyCell(c *mygo.Context, width float32, text string, props display.TextProps) {
 	cell := display.Text(c, text, props)
 	cell.Width(width)
 }
 
-// placeLabel names a cell the way the board labels it: the letter of the
-// column and the number of the row.
 func placeLabel(row, col int) string {
 	if row < 0 || row >= len(rowLabels) || col < 0 || col >= len(columnLabels) {
 		return "-"
@@ -475,8 +434,6 @@ func placeLabel(row, col int) string {
 	return columnLabels[col] + rowLabels[row]
 }
 
-// buildStoneDot draws the stone of a move. The white stone has a border, so
-// it does not vanish into the panel.
 func (a *App) buildStoneDot(c *mygo.Context, player gomoku.Player, tk *theme.Tokens) {
 	dot := mygo.Box(c).Size(12, 12).Radius(6).Background(stoneColor(player)).Shrink(0)
 	if player == gomoku.PlayerWhite {
@@ -484,7 +441,6 @@ func (a *App) buildStoneDot(c *mygo.Context, player gomoku.Player, tk *theme.Tok
 	}
 }
 
-// modeLabel returns the name of a game mode.
 func modeLabel(mode gomoku.Mode) string {
 	switch mode {
 	case gomoku.ModeAIVsAI:
@@ -497,7 +453,6 @@ func modeLabel(mode gomoku.Mode) string {
 	return string(mode)
 }
 
-// sideLabel returns the name of a side.
 func sideLabel(config gomoku.PlayerConfig) string {
 	if config.IsAI() {
 		return "AI · " + config.EngineName()
@@ -505,7 +460,6 @@ func sideLabel(config gomoku.PlayerConfig) string {
 	return "玩家"
 }
 
-// executionLabel returns the state of the game.
 func executionLabel(game *gomoku.Game) string {
 	if game.Status == gomoku.StatusFinished {
 		return "已结束"

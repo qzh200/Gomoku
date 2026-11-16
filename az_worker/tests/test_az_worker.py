@@ -1,10 +1,3 @@
-"""Tests of the AlphaZero engine.
-
-The tests need PyTorch; run them with the virtual environment of the project:
-
-    .venv/Scripts/python -m unittest discover -s az_worker/tests -t .
-"""
-
 from __future__ import annotations
 
 import random
@@ -33,7 +26,6 @@ DEVICE = torch.device("cpu")
 
 
 def board(stones: list[tuple[int, int, int]]) -> list[list[int]]:
-    """Return a 15x15 board with the given stones."""
     grid = [[0] * 15 for _ in range(15)]
     for row, col, player in stones:
         grid[row][col] = player
@@ -41,7 +33,6 @@ def board(stones: list[tuple[int, int, int]]) -> list[list[int]]:
 
 
 def small_model() -> GomokuNet:
-    """Return a small network, so the tests stay fast."""
     return GomokuNet(channels=8, blocks=1, value_hidden=8)
 
 
@@ -114,8 +105,6 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(len(images), 8)
 
     def test_the_symmetries_form_a_group(self) -> None:
-        # Two symmetries put together are a symmetry again: that is what
-        # makes the augmentation of the training data complete.
         maps = [forward for forward, _ in TRANSFORMS]
         images = {
             tuple(forward(cell) for cell in range(ACTION_COUNT))
@@ -144,7 +133,6 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(sum(result.visits.values()), result.simulations)
 
     def test_a_five_is_found_without_the_network(self) -> None:
-        # Black has four in a row; the search must see the fifth.
         position = Board(
             board([(7, 7, BLACK), (7, 8, BLACK), (7, 9, BLACK), (7, 10, BLACK), (6, 6, WHITE)])
         )
@@ -161,13 +149,6 @@ class SearchTests(unittest.TestCase):
 
 
 class ValueTests(unittest.TestCase):
-    """The value of a position has to reach the root with the right sign.
-
-    The network says what a position is worth from the side of the player to
-    move there. Every step up the tree the other player is to move, so the
-    sign changes on every level.
-    """
-
     def test_the_value_changes_its_sign_on_every_level(self) -> None:
         searcher = MCTS(small_model(), DEVICE, batch_size=8)
         root = Node(Board(), BLACK)
@@ -175,13 +156,13 @@ class ValueTests(unittest.TestCase):
         leaf = Node(Board(), BLACK)
         root.children[0] = middle
         middle.children[0] = leaf
-        # The leaf is worth 0.7 for the side to move there.
+
         searcher._backpropagate([root, middle, leaf], 0.7)
-        # The leaf keeps the value as it is.
+
         self.assertAlmostEqual(leaf.value_sum, 0.7, places=6)
-        # The node above is to move for the other side, so the sign flips.
+
         self.assertAlmostEqual(middle.value_sum, -0.7, places=6)
-        # The root is two levels up, so the sign is back.
+
         self.assertAlmostEqual(root.value_sum, 0.7, places=6)
 
     def test_the_parent_reads_the_value_of_the_child_the_other_way_round(self) -> None:
@@ -189,9 +170,8 @@ class ValueTests(unittest.TestCase):
         node = Node(Board(), BLACK)
         winning = Node(Board(), WHITE)
         losing = Node(Board(), WHITE)
-        # The value of a child is kept from the side of the player to move
-        # there, so the parent reads it the other way round: the child that
-        # is worth minus 0.5 for its own side is worth 0.5 for the parent.
+
+
         winning.value_sum = -0.5
         winning.visits = 1
         losing.value_sum = 0.5
@@ -210,8 +190,8 @@ class ValueTests(unittest.TestCase):
         leaf.visits = 4
         searcher._backpropagate([root, leaf], 0.5)
         result = searcher._collect(root)
-        # The leaf is worth 0.5 for the side to move there, which is minus
-        # 0.5 for the root.
+
+
         self.assertAlmostEqual(result.root_value, -0.5, places=6)
 
 
@@ -225,8 +205,6 @@ class EngineTests(unittest.TestCase):
         self.assertIn(move, {(7, 6), (7, 11)})
 
     def test_the_engine_blocks_the_only_five_of_the_opponent(self) -> None:
-        # White has four in a row with the left end closed, so (7, 11) is the
-        # only cell that makes five.
         position = board(
             [
                 (7, 6, BLACK),
@@ -242,9 +220,6 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(move, (7, 11))
 
     def test_the_engine_blocks_one_of_two_fives(self) -> None:
-        # White has an open four: (7, 5) and (7, 10) both make five. One
-        # move cannot stop both, so the position is lost, but the engine
-        # still blocks instead of throwing the game away somewhere else.
         position = board(
             [
                 (7, 6, WHITE),
@@ -259,8 +234,6 @@ class EngineTests(unittest.TestCase):
         self.assertIn(move, {(7, 5), (7, 10)})
 
     def test_the_engine_wins_before_it_blocks(self) -> None:
-        # Black can make five and white can make five too. The win comes
-        # first: the game ends before the opponent gets its move.
         position = board(
             [
                 (7, 7, BLACK),
