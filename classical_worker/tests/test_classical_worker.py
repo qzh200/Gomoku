@@ -8,6 +8,7 @@ from classical_worker.engine import ClassicalEngine, EngineError
 from classical_worker.patterns import WINDOW_SCORES, classify as classify_window, decode
 from classical_worker.position import BLACK, WHITE, Position, coordinate_of, other
 from classical_worker.search import INFINITY, Searcher
+from classical_worker.shapes import CLOSED_FOUR, OPEN_THREE, board_threats, threat_profile
 from classical_worker.threats import VCF, VCT, classify, forced_moves, ordered_moves
 from classical_worker.tt import MATE_SCORE, EXACT, LOWER, SIDE_KEY, TranspositionTable, from_table, to_table
 
@@ -171,6 +172,203 @@ class ThreatTests(unittest.TestCase):
         self.assertIn((7, 6), forced_moves(winning, BLACK, 4))
         blocking = Position(board([(7, 7, WHITE), (7, 8, WHITE), (7, 9, WHITE), (7, 10, WHITE)]))
         self.assertEqual(forced_moves(blocking, BLACK, 4), [(7, 6), (7, 11)])
+
+
+class ThreatRankTests(unittest.TestCase):
+    def test_one_open_three_counts_as_one_line(self) -> None:
+        position = Position(board([(7, 7, BLACK), (7, 8, BLACK)]))
+        threat = classify(position, 7, 9, BLACK)
+        self.assertEqual(threat.open_threes, 1)
+        self.assertEqual(threat.open_fours, 0)
+
+    def test_a_double_three_counts_two_lines(self) -> None:
+        position = Position(
+            board([(7, 5, BLACK), (7, 6, BLACK), (5, 7, BLACK), (6, 7, BLACK)])
+        )
+        threat = classify(position, 7, 7, BLACK)
+        self.assertEqual(threat.open_threes, 2)
+        self.assertEqual(threat.five_points, 0)
+
+    def test_a_four_three_outranks_a_double_three(self) -> None:
+        four_three = classify(
+            Position(
+                board(
+                    [
+                        (7, 4, BLACK),
+                        (7, 5, BLACK),
+                        (7, 6, BLACK),
+                        (7, 3, WHITE),
+                        (5, 7, BLACK),
+                        (6, 7, BLACK),
+                    ]
+                )
+            ),
+            7,
+            7,
+            BLACK,
+        )
+        double_three = classify(
+            Position(board([(7, 5, BLACK), (7, 6, BLACK), (5, 7, BLACK), (6, 7, BLACK)])),
+            7,
+            7,
+            BLACK,
+        )
+        self.assertEqual((four_three.five_points, four_three.open_threes), (1, 1))
+        self.assertGreater(four_three.rank, double_three.rank)
+
+    def test_an_open_four_outranks_every_combination(self) -> None:
+        open_four = classify(
+            Position(board([(7, 4, BLACK), (7, 5, BLACK), (7, 6, BLACK)])), 7, 7, BLACK
+        )
+        four_three = classify(
+            Position(
+                board(
+                    [
+                        (7, 4, BLACK),
+                        (7, 5, BLACK),
+                        (7, 6, BLACK),
+                        (7, 3, WHITE),
+                        (5, 7, BLACK),
+                        (6, 7, BLACK),
+                    ]
+                )
+            ),
+            7,
+            7,
+            BLACK,
+        )
+        self.assertEqual((open_four.five_points, open_four.open_fours), (2, 1))
+        self.assertGreater(open_four.rank, four_three.rank)
+
+
+class ShapeProfileTests(unittest.TestCase):
+    def test_reads_an_open_four_with_two_five_points(self) -> None:
+        profile = threat_profile(
+            Position(board([(7, 4, BLACK), (7, 5, BLACK), (7, 6, BLACK), (7, 7, BLACK)])),
+            BLACK,
+        )
+        self.assertEqual(len(profile.open_fours), 1)
+        threat = profile.open_fours[0]
+        self.assertEqual(threat.stones, frozenset({(7, 4), (7, 5), (7, 6), (7, 7)}))
+        self.assertEqual(threat.points, ((7, 3), (7, 8)))
+        self.assertEqual(threat.blocks, ())
+        self.assertEqual(profile.five_points, frozenset({(7, 3), (7, 8)}))
+
+    def test_reads_a_closed_four_with_one_five_point(self) -> None:
+        profile = threat_profile(
+            Position(
+                board([(7, 4, BLACK), (7, 5, BLACK), (7, 6, BLACK), (7, 7, BLACK), (7, 3, WHITE)])
+            ),
+            BLACK,
+        )
+        self.assertEqual(len(profile.closed_fours), 1)
+        threat = profile.closed_fours[0]
+        self.assertEqual(threat.kind, CLOSED_FOUR)
+        self.assertEqual(threat.points, ((7, 8),))
+        self.assertEqual(threat.blocks, ((7, 8),))
+
+    def test_reads_the_open_three_extension_points(self) -> None:
+        profile = threat_profile(
+            Position(board([(7, 5, BLACK), (7, 6, BLACK), (7, 7, BLACK)])), BLACK
+        )
+        self.assertEqual(len(profile.open_threes), 1)
+        threat = profile.open_threes[0]
+        self.assertEqual(threat.kind, OPEN_THREE)
+        self.assertEqual(threat.points, ((7, 4), (7, 8)))
+        self.assertEqual(threat.blocks, ((7, 4), (7, 8)))
+        self.assertEqual([extension for extension, _ in threat.extensions], [(7, 4), (7, 8)])
+
+    def test_a_broken_three_has_one_extension(self) -> None:
+        profile = threat_profile(
+            Position(board([(7, 1, BLACK), (7, 3, BLACK), (7, 4, BLACK)])), BLACK
+        )
+        threat = profile.open_threes[0]
+        self.assertEqual(threat.points, ((7, 2),))
+        self.assertEqual(threat.blocks, ((7, 0), (7, 2), (7, 5)))
+
+    def test_a_blocked_three_is_not_a_threat(self) -> None:
+        profile = threat_profile(
+            Position(board([(7, 5, BLACK), (7, 6, BLACK), (7, 7, BLACK), (7, 4, WHITE)])),
+            BLACK,
+        )
+        self.assertEqual(profile.threats, ())
+        self.assertEqual(profile.block_points, frozenset())
+
+    def test_reports_the_threats_of_both_sides(self) -> None:
+        black, white = board_threats(
+            Position(
+                board(
+                    [
+                        (7, 4, BLACK),
+                        (7, 5, BLACK),
+                        (7, 6, BLACK),
+                        (3, 4, WHITE),
+                        (3, 5, WHITE),
+                        (3, 6, WHITE),
+                    ]
+                )
+            )
+        )
+        self.assertEqual(black.player, BLACK)
+        self.assertEqual(white.player, WHITE)
+        self.assertEqual(set(black.block_points), {(7, 3), (7, 7)})
+        self.assertEqual(set(white.block_points), {(3, 3), (3, 7)})
+
+
+class CombinationTests(unittest.TestCase):
+    def test_extends_an_open_three_to_a_winning_open_four(self) -> None:
+        position = Position(board([(7, 5, BLACK), (7, 6, BLACK), (7, 7, BLACK)]))
+        move = VCT().best_move(position, BLACK, float("inf"))
+        self.assertIn(move, {(7, 4), (7, 8)})
+
+    def test_finds_the_four_three_win(self) -> None:
+        position = Position(
+            board(
+                [
+                    (7, 4, BLACK),
+                    (7, 5, BLACK),
+                    (7, 6, BLACK),
+                    (7, 3, WHITE),
+                    (5, 7, BLACK),
+                    (6, 7, BLACK),
+                    (0, 0, WHITE),
+                    (0, 2, WHITE),
+                ]
+            )
+        )
+        self.assertEqual(VCT().best_move(position, BLACK, float("inf")), (7, 7))
+
+    def test_finds_the_double_three_win_through_a_counter_four(self) -> None:
+        position = Position(
+            board(
+                [
+                    (7, 5, BLACK),
+                    (7, 6, BLACK),
+                    (5, 7, BLACK),
+                    (6, 7, BLACK),
+                    (0, 0, WHITE),
+                    (0, 1, WHITE),
+                    (0, 2, WHITE),
+                ]
+            )
+        )
+        self.assertEqual(VCT().best_move(position, BLACK, float("inf")), (7, 7))
+
+    def test_refuses_a_double_three_that_loses_to_an_open_four(self) -> None:
+        position = Position(
+            board(
+                [
+                    (7, 5, BLACK),
+                    (7, 6, BLACK),
+                    (5, 7, BLACK),
+                    (6, 7, BLACK),
+                    (3, 3, WHITE),
+                    (3, 4, WHITE),
+                    (3, 5, WHITE),
+                ]
+            )
+        )
+        self.assertIsNone(VCT().best_move(position, BLACK, float("inf")))
 
 
 class SearchTests(unittest.TestCase):

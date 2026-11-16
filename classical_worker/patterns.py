@@ -11,6 +11,12 @@ WINDOW = 6
 POW3 = (1, 3, 9, 27, 81, 243)
 
 
+FIVE_WINDOW = 5
+OPEN_FOUR_PATTERN = "011110"
+OPEN_THREE_PATTERNS = ("011100", "001110", "010110", "011010")
+OPEN_THREE_EXTENSION = {"011100": 4, "001110": 1, "010110": 2, "011010": 3}
+
+
 SHAPES: tuple[tuple[str, tuple[str, ...], int], ...] = (
     ("five", ("11111",), 10_000_000),
     ("open_four", ("011110",), 120_000),

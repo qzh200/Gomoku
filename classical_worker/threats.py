@@ -3,7 +3,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+from .patterns import OPEN_THREE_PATTERNS
 from .position import DIRECTIONS, EMPTY, Position, in_bounds, other
+from .shapes import threat_profile
 from .tt import SIDE_KEY
 
 
@@ -43,7 +45,7 @@ def _classify_line(text: str) -> tuple[int, int, int, int]:
     five = 0
     five_points: set[int] = set()
     open_fours = 0
-    open_threes: set[int] = set()
+    open_threes = 0
 
 
     for start in range(5):
@@ -64,18 +66,13 @@ def _classify_line(text: str) -> tuple[int, int, int, int]:
             open_fours += 1
 
 
-    for index, value in enumerate(text):
-        if value != FREE:
-            continue
-        played = text[:index] + OWN + text[index + 1 :]
-        for start in range(4):
-            if not start + 1 <= 4 <= start + 4:
-                continue
-            if played[start : start + 6] == "011110":
-                open_threes.add(index)
-                break
+    for start in range(4):
+        window = text[start : start + 6]
+        if window in OPEN_THREE_PATTERNS and window[4 - start] == OWN:
+            open_threes = 1
+            break
 
-    return five, len(five_points), open_fours, len(open_threes)
+    return five, len(five_points), open_fours, open_threes
 
 
 def _build_threat_table() -> tuple[tuple[int, int, int, int], ...]:
@@ -350,56 +347,61 @@ class VCT(_ForcedSearch):
             try:
                 if undo.win:
                     return move
-                if self._wins_after(position, attacker, depth - 1):
+                if self._defends(position, attacker, depth - 1):
                     return move
             finally:
                 position.undo(undo)
         return None
 
-    def _wins_after(self, position: Position, attacker: int, depth: int) -> bool:
+    def _defends(self, position: Position, attacker: int, depth: int) -> bool:
         opponent = other(attacker)
         if five_moves(position, opponent):
             return False
         wins = five_moves(position, attacker)
         if len(wins) >= 2:
             return True
+        if depth <= 0:
+            return False
         if len(wins) == 1:
             undo = position.play(*wins[0], opponent)
             try:
                 if undo.win:
                     return False
-                if five_moves(position, opponent):
-                    return False
-                if open_four_cells(position, attacker):
-                    return True
-                return self._search(position, attacker, depth, 2)
+                return self._attacks(position, attacker, depth)
             finally:
                 position.undo(undo)
-
-
-        open_fours = open_four_cells(position, attacker)
-        if not open_fours:
+        replies = self._defences(position, attacker)
+        if not replies:
             return False
-        for block in open_fours:
+        for reply in replies:
             self._tick()
-            undo = position.play(*block, opponent)
+            undo = position.play(*reply, opponent)
             try:
                 if undo.win:
                     return False
-                if five_moves(position, opponent):
-                    return False
-                if open_four_cells(position, attacker):
-                    continue
-                if not self._search(position, attacker, depth, 2):
+                if not self._attacks(position, attacker, depth):
                     return False
             finally:
                 position.undo(undo)
         return True
 
-    def _search(self, position: Position, attacker: int, depth: int, ply: int) -> bool:
-        self._tick()
+    def _attacks(self, position: Position, attacker: int, depth: int) -> bool:
+        if five_moves(position, attacker):
+            return True
         if depth <= 0:
             return False
+        opponent = other(attacker)
+        blocks = five_moves(position, opponent)
+        if len(blocks) >= 2:
+            return False
+        if blocks:
+            undo = position.play(*blocks[0], attacker)
+            try:
+                if undo.win:
+                    return True
+                return self._defends(position, attacker, depth - 1)
+            finally:
+                position.undo(undo)
         key = self._key(position, attacker, depth)
         known = self.tt.get(key)
         if known is not None:
@@ -411,7 +413,7 @@ class VCT(_ForcedSearch):
                 if undo.win:
                     self.tt[key] = True
                     return True
-                if self._wins_after(position, attacker, depth - 1):
+                if self._defends(position, attacker, depth - 1):
                     self.tt[key] = True
                     return True
             finally:
@@ -420,24 +422,27 @@ class VCT(_ForcedSearch):
         return False
 
     @staticmethod
+    def _defences(position: Position, attacker: int) -> list[tuple[int, int]]:
+        profile = threat_profile(position, attacker)
+        if not profile.open_threes:
+            return []
+        opponent = other(attacker)
+        cells: set[tuple[int, int]] = set()
+        for threat in profile.open_threes:
+            cells.update(threat.blocks)
+        for cell in position.neighbours():
+            if classify(position, *cell, opponent).five_points:
+                cells.add(cell)
+        return sorted(cells)
+
+    @staticmethod
     def _attack_moves(position: Position, attacker: int) -> list[tuple[int, int]]:
         scored = []
         for cell in position.neighbours():
-            if position.wins_with(*cell, attacker):
-                scored.append((10**6, cell))
-                continue
             threat = classify(position, *cell, attacker)
-            if threat.five_points:
-                scored.append((threat.five_points, cell))
-            elif threat.open_threes:
-                scored.append((threat.open_threes, cell))
+            if threat.five:
+                scored.append((1_000_000_000, cell))
+            elif threat.five_points or threat.open_threes:
+                scored.append((threat.rank, cell))
         scored.sort(key=lambda item: (-item[0], item[1]))
         return [cell for _, cell in scored]
-
-
-def open_four_cells(position: Position, player: int) -> list[tuple[int, int]]:
-    return [
-        cell
-        for cell in position.neighbours()
-        if classify(position, *cell, player).open_fours
-    ]
