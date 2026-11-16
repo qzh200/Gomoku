@@ -8,7 +8,6 @@ from pathlib import Path
 import torch
 
 from .network import GomokuNet, load_model
-from .selfplay import Example, ReplayBuffer, SelfPlay, evaluate, save_checkpoint, train
 
 
 DEFAULT_GAMES = 10
@@ -79,10 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"没有权重文件，从随机网络开始: {start_path}", flush=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    buffer = ReplayBuffer(capacity=args.buffer)
     if args.resume and args.buffer_file:
-        buffer.load(args.buffer_file)
-        print(f"读取回放缓冲区: {len(buffer.examples)} 个样本", flush=True)
     player = SelfPlay(
         model,
         device,
@@ -100,18 +96,13 @@ def main(argv: list[str] | None = None) -> int:
         wins = {1: 0, 2: 0}
         for _ in range(args.games):
             game = player.play_game()
-            for example in game.examples:
-                buffer.add(example)
             if game.winner is not None:
                 wins[game.winner] += 1
 
 
         validation = player.play_game().examples
-        losses = train(
             model,
             optimizer,
-            buffer,
-            device,
             steps=args.train_steps,
             batch_size=args.batch_size,
             augment_data=not args.no_augment,
@@ -121,12 +112,10 @@ def main(argv: list[str] | None = None) -> int:
         policy_loss, value_loss = evaluate(model, validation, device)
         save_checkpoint(model, model_path)
         if args.buffer_file:
-            buffer.save(args.buffer_file)
         elapsed = time.monotonic() - started
         last = losses[-1] if losses else float("nan")
         print(
             f"第 {iteration} 轮: 胜负 {wins[1]}:{wins[2]}，"
-            f"缓冲区 {len(buffer.examples)}，训练损失 {last:.4f}，"
             f"验证策略 {policy_loss:.4f} 验证价值 {value_loss:.4f}，"
             f"用时 {elapsed:.0f} 秒",
             flush=True,

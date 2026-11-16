@@ -5,7 +5,6 @@ from pathlib import Path
 import torch
 
 from .board import Board, other
-from .mcts import MCTS, row_col_of
 from .network import GomokuNet, load_model
 
 
@@ -41,7 +40,6 @@ class AlphaZeroEngine:
         self.candidate_radius = candidate_radius
 
         if self.model_path.is_file():
-            self.model = load_model(str(self.model_path), self.device)
         else:
             self.model = GomokuNet().to(self.device)
         self.model.eval()

@@ -1,4 +1,16 @@
 from __future__ import annotations
+    def test_the_time_budget_stops_the_search(self) -> None:
+        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
+        searcher = MCTS(small_model(), DEVICE, batch_size=8)
+        result = searcher.search(position, BLACK, simulations=10_000_000, time_budget=0.05)
+        self.assertLess(result.simulations, 10_000_000)
+    def test_the_search_keeps_the_top_candidates_only(self) -> None:
+        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
+        searcher = MCTS(small_model(), DEVICE, batch_size=8, candidate_width=4)
+        result = searcher.search(position, BLACK, simulations=32)
+        self.assertLessEqual(len(result.visits), 4)
+
+
 
 import random
 import unittest

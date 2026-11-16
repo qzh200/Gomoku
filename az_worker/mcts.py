@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+import time
 
 from .board import BOARD_SIZE, Board, other
 from .features import encode, legal_mask
@@ -18,6 +19,9 @@ DEFAULT_NOISE_WEIGHT = 0.25
 
 
 DEFAULT_CANDIDATE_RADIUS = 1
+
+
+DEFAULT_CANDIDATE_WIDTH = 16
 
 
 def cell_of(row: int, col: int) -> int:
@@ -47,14 +51,22 @@ class Node:
         "value_sum",
         "virtual_visits",
         "prior",
-        "board",
         "player",
         "terminal_value",
         "expanded",
         "last_move",
+        "_board",
+        "_parent",
+        "_move",
     )
 
-    def __init__(self, board: Board, player: int) -> None:
+    def __init__(
+        self,
+        board: Board | None,
+        player: int,
+        parent: "Node | None" = None,
+        move: tuple[int, int] | None = None,
+    ) -> None:
         self.children: dict[int, Node] = {}
         self.visits = 0
 
@@ -64,7 +76,6 @@ class Node:
 
         self.virtual_visits = 0
         self.prior = 0.0
-        self.board = board
         self.player = player
 
 
@@ -72,6 +83,22 @@ class Node:
         self.expanded = False
 
         self.last_move: tuple[int, int] | None = None
+        self._board = board
+        self._parent = parent
+        self._move = move
+
+    @property
+    def board(self) -> Board:
+        board = self._board
+        if board is None:
+            parent = self._parent
+            move = self._move
+            if parent is None or move is None:
+                raise ValueError("这个节点没有棋盘")
+            board = parent.board.copy()
+            board.play(move[0], move[1], parent.player)
+            self._board = board
+        return board
 
 
 class SearchResult:
@@ -123,6 +150,8 @@ class MCTS:
         noise_weight: float = DEFAULT_NOISE_WEIGHT,
         batch_size: int = 32,
         candidate_radius: int = DEFAULT_CANDIDATE_RADIUS,
+        candidate_width: int = DEFAULT_CANDIDATE_WIDTH,
+        time_budget: float | None = None,
         seed: int | None = None,
     ) -> None:
         self.model = model
@@ -132,6 +161,8 @@ class MCTS:
         self.noise_weight = noise_weight
         self.batch_size = max(1, batch_size)
         self.candidate_radius = candidate_radius
+        self.candidate_width = max(1, candidate_width)
+        self.time_budget = time_budget
         self.rng = random.Random(seed)
 
 
@@ -142,6 +173,7 @@ class MCTS:
         simulations: int = 400,
         add_noise: bool = False,
         last_move: tuple[int, int] | None = None,
+        time_budget: float | None = None,
     ) -> SearchResult:
         root = Node(board.copy(), player)
         root.last_move = last_move
@@ -154,7 +186,11 @@ class MCTS:
         pending: list[tuple[Node, list[Node]]] = []
         waiting: set[int] = set()
 
-        for _ in range(simulations):
+        budget = time_budget if time_budget is not None else self.time_budget
+        deadline = time.monotonic() + budget if budget else None
+
+        done = 0
+        while done < simulations:
             leaf, path = self._descend(root, waiting)
             if leaf is None:
                 self._release(path)
@@ -165,12 +201,16 @@ class MCTS:
                     break
             if leaf.terminal_value is not None:
                 self._backpropagate(path, leaf.terminal_value)
+                done += 1
                 continue
             pending.append((leaf, path))
             waiting.add(id(leaf))
             if len(pending) >= self.batch_size:
                 self._flush(pending)
                 waiting.clear()
+            done += 1
+            if deadline is not None and done % 16 == 0 and time.monotonic() >= deadline:
+                break
 
         if pending:
             self._flush(pending)
@@ -214,10 +254,15 @@ class MCTS:
             priors = [1.0 / len(moves)] * len(moves)
         else:
             priors = [prior / total for prior in priors]
-        for (row, col), prior in zip(moves, priors):
-            child_board = node.board.copy()
-            won = child_board.play(row, col, node.player)
-            child = Node(child_board, other(node.player))
+        scored = sorted(
+            zip(moves, priors),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        keep = scored[: self.candidate_width]
+        for (row, col), prior in keep:
+            won = node.board.wins_with(row, col, node.player)
+            child = Node(None, other(node.player), parent=node, move=(row, col))
             child.prior = prior
             child.last_move = (row, col)
             if won:

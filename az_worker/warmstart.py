@@ -13,8 +13,6 @@ from classical_worker.threats import ordered_moves
 
 from .board import BOARD_SIZE, Board
 from .features import encode, legal_mask
-from .network import GomokuNet, evaluate, load_model, save, train_batch
-from .selfplay import Example, augment
 
 
 DEFAULT_GAMES = 100
@@ -32,12 +30,10 @@ DEFAULT_TEACHER_MOVES = 8
 DEFAULT_DECAY = 2.0
 
 
-DEFAULT_SCORE_SCALE = 8000.0
 
 
 VALUE_OUTCOME = "outcome"
 VALUE_EVAL = "eval"
-DEFAULT_VALUE_TARGET = VALUE_OUTCOME
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -80,52 +76,10 @@ def collect_examples(
     score_scale: float = DEFAULT_SCORE_SCALE,
     value_target: str = VALUE_OUTCOME,
 ) -> list[Example]:
-    searcher = Searcher(depth=depth, width=width, time_budget=time_budget)
     examples: list[Example] = []
     for _ in range(games):
-        board = Board()
-        position = Position()
-        player = BLACK
-        last_move: tuple[int, int] | None = None
-        start = len(examples)
-        winner: int | None = None
-        while not board.is_full():
-            move = searcher.best_move(position, player)
-            if move is None:
-                break
 
 
-            ranked = ordered_moves(position, player, teacher_moves)
-            if ranked and ranked[0] != move:
-                ranked = [move] + [cell for cell in ranked if cell != move]
-            examples.append(
-                Example(
-                    planes=encode(board, player, last_move),
-                    policy=teacher_policy(ranked, decay),
-                    legal=legal_mask(board, 1),
-                    value=(
-                        math.tanh(position.evaluate(player) / score_scale)
-                        if value_target == VALUE_EVAL
-                        else 0.0
-                    ),
-                    teacher_cell=move[0] * BOARD_SIZE + move[1],
-                )
-            )
-            row, col = move
-            last_move = (row, col)
-            if board.play(row, col, player):
-                winner = player
-                break
-            position.play(row, col, player)
-            player = other(player)
-        if value_target == VALUE_OUTCOME:
-            for index, example in enumerate(examples[start:]):
-                mover = BLACK if index % 2 == 0 else WHITE
-                if winner is None:
-                    example.value = 0.0
-                else:
-                    example.value = 1.0 if winner == mover else -1.0
-    return examples
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -167,29 +121,11 @@ def main(argv: list[str] | None = None) -> int:
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     steps = args.steps if args.steps is not None else max(1, len(examples) // 32) * 6
-    batch = 128
-    for step in range(steps):
-        indexes = [rng.randrange(len(examples)) for _ in range(min(batch, len(examples)))]
-        planes = []
-        policies = []
-        legal = []
-        values = []
-        for index in indexes:
-            example = examples[index]
 
-            item_planes, item_policy, item_legal = augment(example, rng)
-            planes.append(item_planes)
-            policies.append(item_policy)
-            legal.append(item_legal)
-            values.append(example.value)
-        loss, policy_loss, value_loss = train_batch(
             model,
             optimizer,
             planes,
-            policies,
-            values,
             legal,
-            device,
         )
         if (step + 1) % 50 == 0:
             agreement = agreement_of(model, validation, device)

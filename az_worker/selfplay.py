@@ -9,7 +9,6 @@ import torch
 from .board import BLACK, Board, other
 from .features import TRANSFORMS, encode, legal_mask, transform_planes, transform_policy
 from .mcts import MCTS, row_col_of
-from .network import GomokuNet, save, train_batch
 
 
 DEFAULT_TEMPERATURE_MOVES = 12

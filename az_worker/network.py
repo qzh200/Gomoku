@@ -90,8 +90,6 @@ def train_batch(
     target_value = torch.tensor(values, dtype=torch.float32, device=device)
     mask = torch.tensor(legal, dtype=torch.float32, device=device)
 
-    logits, predicted = model(batch)
-
 
     logits = logits.masked_fill(mask == 0, -1e9)
     log_probabilities = torch.log_softmax(logits, dim=1)
