@@ -28,9 +28,14 @@ INVALID_MOVE_HINT = "该位置无效或已有棋子，请换一个空点。"
 # The reminder of the shape of the answer, after an answer that had no move.
 FORMAT_HINT = '请只输出 JSON：{"move": "M5"}，坐标用棋盘的列字母和行号。'
 
+# How many cells the prompt offers, and how many the correction repeats.
+# Enough to choose from, few enough for a small model to read.
+OFFERED_LIMIT = 20
+RETRY_CELLS = 12
+
 
 class EngineError(RuntimeError):
-    """The model did not answer with a playable move."""
+    """The engine could not find a move at all."""
 
 
 class LLMEngine:
@@ -48,34 +53,49 @@ class LLMEngine:
         last_move: dict | None = None,
         config: dict | None = None,
     ) -> tuple[int, int]:
-        """Return the row and the column of the move the model picked."""
+        """Return the row and the column of the move to play.
+
+        A model that keeps answering a cell it may not play would cost the
+        turn, and the server would hand the same turn out again. So after the
+        attempts are spent the engine plays the first cell it offered: the
+        game keeps going and the log says the model was overruled.
+        """
+        offered = board.candidates(board_state, OFFERED_LIMIT)
+        if not offered:
+            raise EngineError("棋盘已满，没有可落子的位置")
+        allowed = set(offered)
+        labels = [board.coordinate_of(row, col) for row, col in offered]
+        retry_hint = "只能从这些点里选：" + " ".join(labels[:RETRY_CELLS])
+
         messages = self._messages(board_state, history, player, last_move, config)
-        offered = set(board.candidates(board_state))
         problem = ""
         for _ in range(self.max_attempts):
             answer = self.client.complete(messages)
             move = self._move_of(answer, board_state)
             if move is None:
-                problem = FORMAT_HINT
-                messages.append(ChatMessage("assistant", answer.text))
-                messages.append(ChatMessage("user", problem))
-                continue
-            row, col = move
-            if not board.is_empty(board_state, row, col):
-                # Naming the cell it picked tells the model what went wrong.
-                problem = f"{board.coordinate_of(row, col)} {INVALID_MOVE_HINT}"
-                messages.append(ChatMessage("assistant", answer.text))
-                messages.append(ChatMessage("user", problem))
-                continue
-            if move not in offered:
-                # A stone far from the others helps nobody; the list of the
-                # cells worth playing keeps the answer in the fight.
-                problem = f"{board.coordinate_of(row, col)} 离战场太远，请从空点列表里选一个。"
-                messages.append(ChatMessage("assistant", answer.text))
-                messages.append(ChatMessage("user", problem))
-                continue
-            return row, col
-        raise EngineError(problem or "模型没有给出合法落点")
+                problem = FORMAT_HINT + retry_hint
+            else:
+                row, col = move
+                cell = board.coordinate_of(row, col)
+                if not board.is_empty(board_state, row, col):
+                    # Naming the cell it picked tells the model what went wrong.
+                    problem = f"{cell} {INVALID_MOVE_HINT}" + retry_hint
+                elif move not in allowed:
+                    # A stone far from the others helps nobody; repeating the
+                    # list is what makes a small model pick from it.
+                    problem = f"{cell} 不在可下点里。" + retry_hint
+                else:
+                    return row, col
+            messages.append(ChatMessage("assistant", answer.text))
+            messages.append(ChatMessage("user", problem))
+
+        fallback = offered[0]
+        print(
+            f"[llm] 模型 {self.max_attempts} 次都没给出可下点，改用 "
+            f"{board.coordinate_of(*fallback)}",
+            flush=True,
+        )
+        return fallback
 
     def _move_of(self, answer: "Answer", board_state: list[list[int]]) -> tuple[int, int] | None:
         """Read the move out of the answer of the model.
@@ -109,9 +129,9 @@ class LLMEngine:
         if last_move:
             coordinate = board.coordinate_of(last_move["row"], last_move["col"])
             lines.append(f"最后一手：{coordinate}（{board.player_name(last_move['player'])}）")
-        free = [board.coordinate_of(row, col) for row, col in board.candidates(board_state)]
+        free = [board.coordinate_of(row, col) for row, col in board.candidates(board_state, OFFERED_LIMIT)]
         lines.append("")
-        lines.append("只能下在这些空点之一：" + " ".join(free))
+        lines.append(f"可下的空点（共 {len(free)} 个，只能从这里选）：" + " ".join(free))
         warnings = board.threats(board_state, player)
         if warnings:
             lines.append("")

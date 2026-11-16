@@ -219,7 +219,10 @@ def candidates(board_state: list[list[int]], limit: int = 40) -> list[tuple[int,
             if nearest <= 2:
                 ranked.append((nearest, abs(row - 7) + abs(col - 7), row, col))
     if not ranked:
-        return [(7, 7)]
+        # On an empty board the center is the move; a full board has none.
+        if all(cell == 0 for row in board_state for cell in row):
+            return [(7, 7)]
+        return []
     ranked.sort()
     return [(row, col) for _, _, row, col in ranked[:limit]]
 

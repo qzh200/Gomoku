@@ -185,11 +185,50 @@ class EngineTests(unittest.TestCase):
         self.assertIn("D4", problem)
         self.assertIn("已有棋子", problem)
 
-    def test_gives_up_when_no_answer_is_playable(self) -> None:
+    def test_the_correction_names_the_cells_to_choose_from(self) -> None:
+        state = empty_board()
+        state[3][3] = board.WHITE
+        client = FakeClient(['{"move": "D4"}', '{"move": "E5"}'])
+        engine = LLMEngine(client, max_attempts=2)
+        engine.choose_move(state, [], board.BLACK)
+        problem = client.calls[1][-1].content
+        # The cell next to the white stone is offered again, so a model that
+        # lost the list has it in front of it.
+        self.assertIn("只能从这些点里选", problem)
+        self.assertIn(board.coordinate_of(3, 4), problem)
+
+    def test_a_cell_far_from_the_fight_is_refused(self) -> None:
+        state = empty_board()
+        state[7][7] = board.BLACK
+        client = FakeClient(['{"move": "B6"}', '{"move": "H9"}'])
+        engine = LLMEngine(client, max_attempts=2)
+        move = engine.choose_move(state, [], board.WHITE)
+        self.assertEqual(move, (8, 7))
+        self.assertIn("不在可下点里", client.calls[1][-1].content)
+
+    def test_plays_a_legal_cell_when_the_model_never_complies(self) -> None:
+        # The model answers a cell it may not play, every time. The turn must
+        # still be played, or the server hands the same turn out again.
+        state = empty_board()
+        state[7][7] = board.BLACK
+        client = FakeClient(['{"move": "B6"}', '{"move": "B6"}'])
+        engine = LLMEngine(client, max_attempts=2)
+        move = engine.choose_move(state, [], board.WHITE)
+        self.assertNotEqual(move, (5, 1))
+        self.assertTrue(board.is_empty(state, *move))
+
+    def test_plays_a_legal_cell_when_the_answer_cannot_be_read(self) -> None:
         client = FakeClient(["不知道", "还是不知道"])
         engine = LLMEngine(client, max_attempts=2)
+        move = engine.choose_move(empty_board(), [], board.BLACK)
+        self.assertEqual(move, (7, 7))
+
+    def test_reports_a_full_board(self) -> None:
+        state = [[1 if (row + col) % 2 == 0 else 2 for col in range(15)] for row in range(15)]
+        client = FakeClient([])
+        engine = LLMEngine(client, max_attempts=2)
         with self.assertRaises(EngineError):
-            engine.choose_move(empty_board(), [], board.BLACK)
+            engine.choose_move(state, [], board.BLACK)
 
 
 class OpenAIClientTests(unittest.TestCase):
@@ -299,10 +338,12 @@ class EngineReasoningTests(unittest.TestCase):
         self.assertEqual(engine.choose_move(empty_board(), [], board.BLACK), (7, 7))
 
     def test_does_not_read_a_coordinate_from_the_reasoning(self) -> None:
+        # Prose in the reasoning mentions cells; none of them is the answer,
+        # so the engine falls back to a cell it offered instead.
         client = FakeClient([("O 在 H8，下一步可能下在 I9", True)])
         engine = LLMEngine(client, max_attempts=1)
-        with self.assertRaises(EngineError):
-            engine.choose_move(empty_board(), [], board.BLACK)
+        move = engine.choose_move(empty_board(), [], board.BLACK)
+        self.assertEqual(move, (7, 7))
 
 
 if __name__ == "__main__":
