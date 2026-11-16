@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import math
+import os
 import random
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import torch
 
-from classical_worker.position import BLACK, WHITE, Position, other
-from classical_worker.search import Searcher
-from classical_worker.threats import ordered_moves
-
-from .board import BOARD_SIZE, Board
-from .features import encode, legal_mask
+from .dataset import TensorDataset
+from .network import GomokuNet, evaluate, load_model, save, train_tensors
+from .selfplay import Example
+from .teacher import VALUE_EVAL, VALUE_OUTCOME, collect_one_game
 
 
 DEFAULT_GAMES = 100
@@ -22,6 +21,9 @@ DEFAULT_TIME = 0.05
 DEFAULT_CHANNELS = 64
 DEFAULT_BLOCKS = 6
 DEFAULT_MODEL = "models/az/warmstart.pt"
+DEFAULT_DATA_OUT = "models/az/teacher_data.pt"
+DEFAULT_BATCH_SIZE = 1024
+DEFAULT_WORKERS = max(1, (os.cpu_count() or 2) - 1)
 
 
 DEFAULT_TEACHER_MOVES = 8
@@ -30,10 +32,12 @@ DEFAULT_TEACHER_MOVES = 8
 DEFAULT_DECAY = 2.0
 
 
+DEFAULT_SCORE_SCALE = 8_000.0
 
 
 VALUE_OUTCOME = "outcome"
 VALUE_EVAL = "eval"
+DEFAULT_VALUE_TARGET = VALUE_EVAL
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -54,16 +58,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--channels", type=int, default=DEFAULT_CHANNELS, help="网络通道数")
     parser.add_argument("--blocks", type=int, default=DEFAULT_BLOCKS, help="残差块数量")
     parser.add_argument("--steps", type=int, default=None, help="训练步数，默认按样本数定")
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="每步的样本数")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        help="并行收集老师样本的进程数，老师的搜索是纯 CPU 的",
+    )
     parser.add_argument("--model", default=DEFAULT_MODEL, help="权重文件路径")
+    parser.add_argument("--data-out", default=DEFAULT_DATA_OUT, help="把收集到的样本存下来，供自对弈训练混用")
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
     return parser
-
-
-def teacher_policy(ranked: list[tuple[int, int]], decay: float) -> list[float]:
-    policy = [0.0] * (BOARD_SIZE * BOARD_SIZE)
-    for index, (row, col) in enumerate(ranked):
-        policy[row * BOARD_SIZE + col] = math.exp(-index / decay)
-    return policy
 
 
 def collect_examples(
@@ -75,11 +80,29 @@ def collect_examples(
     decay: float,
     score_scale: float = DEFAULT_SCORE_SCALE,
     value_target: str = VALUE_OUTCOME,
+    workers: int = 1,
 ) -> list[Example]:
+    payload = (depth, width, time_budget, teacher_moves, decay, score_scale, value_target)
+    if workers > 1 and games > 1:
+        return _collect_parallel(games, payload, workers)
     examples: list[Example] = []
     for _ in range(games):
+        examples.extend(collect_one_game(*payload))
+    return examples
 
 
+def _collect_parallel(
+    games: int,
+    payload: tuple,
+    workers: int,
+) -> list[Example]:
+    """老师的搜索是纯 CPU 的，多进程并行收集，显卡才能在训练阶段吃饱。"""
+    collected: list[list[Example]] = []
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(collect_one_game, *payload) for _ in range(games)]
+        for future in futures:
+            collected.append(future.result())
+    return [example for batch in collected for example in batch]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -105,6 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         args.decay,
         args.score_scale,
         args.value_target,
+        args.workers,
     )
 
 
@@ -121,10 +145,19 @@ def main(argv: list[str] | None = None) -> int:
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     steps = args.steps if args.steps is not None else max(1, len(examples) // 32) * 6
+    dataset = TensorDataset(device, capacity=len(examples))
+    dataset.extend(examples)
+    print(f"样本已放到显卡上: {len(dataset)} 条", flush=True)
 
+    batch = args.batch_size
+    for step in range(steps):
+        planes, policy, legal, targets = dataset.sample(batch, rng, augment=True)
+        loss, policy_loss, value_loss = train_tensors(
             model,
             optimizer,
             planes,
+            policy,
+            targets,
             legal,
         )
         if (step + 1) % 50 == 0:
@@ -142,6 +175,11 @@ def main(argv: list[str] | None = None) -> int:
     model_path.parent.mkdir(parents=True, exist_ok=True)
     save(model, str(model_path))
     print(f"预热权重已写入: {model_path}", flush=True)
+
+    if args.data_out:
+        dataset.extend(validation)
+        dataset.save(args.data_out)
+        print(f"样本已写入: {args.data_out}（{len(dataset)} 条）", flush=True)
     return 0
 
 

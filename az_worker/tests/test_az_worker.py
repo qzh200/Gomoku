@@ -1,16 +1,4 @@
 from __future__ import annotations
-    def test_the_time_budget_stops_the_search(self) -> None:
-        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
-        searcher = MCTS(small_model(), DEVICE, batch_size=8)
-        result = searcher.search(position, BLACK, simulations=10_000_000, time_budget=0.05)
-        self.assertLess(result.simulations, 10_000_000)
-    def test_the_search_keeps_the_top_candidates_only(self) -> None:
-        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
-        searcher = MCTS(small_model(), DEVICE, batch_size=8, candidate_width=4)
-        result = searcher.search(position, BLACK, simulations=32)
-        self.assertLessEqual(len(result.visits), 4)
-
-
 
 import random
 import unittest
@@ -158,6 +146,18 @@ class SearchTests(unittest.TestCase):
         searcher = MCTS(small_model(), DEVICE, batch_size=8)
         result = searcher.search(position, BLACK, simulations=32)
         self.assertAlmostEqual(sum(result.policy), 1.0, places=5)
+
+    def test_the_time_budget_stops_the_search(self) -> None:
+        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
+        searcher = MCTS(small_model(), DEVICE, batch_size=8)
+        result = searcher.search(position, BLACK, simulations=10_000_000, time_budget=0.05)
+        self.assertLess(result.simulations, 10_000_000)
+
+    def test_the_search_keeps_the_top_candidates_only(self) -> None:
+        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
+        searcher = MCTS(small_model(), DEVICE, batch_size=8, candidate_width=4)
+        result = searcher.search(position, BLACK, simulations=32)
+        self.assertLessEqual(len(result.visits), 4)
 
 
 class ValueTests(unittest.TestCase):
@@ -357,11 +357,15 @@ class SettingsTests(unittest.TestCase):
                 "AZ_SIMULATIONS": "128",
                 "AZ_C_PUCT": "2.0",
                 "AZ_MODEL_PATH": "models/az/test.pt",
+                "AZ_CANDIDATE_WIDTH": "8",
+                "AZ_TIME_BUDGET": "1.5",
             }
         )
         self.assertEqual(settings.simulations, 128)
         self.assertEqual(settings.c_puct, 2.0)
         self.assertEqual(settings.model_path, "models/az/test.pt")
+        self.assertEqual(settings.candidate_width, 8)
+        self.assertEqual(settings.time_budget, 1.5)
         self.assertEqual(settings.connection.engine_id, "az")
 
 

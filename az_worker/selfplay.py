@@ -9,6 +9,7 @@ import torch
 from .board import BLACK, Board, other
 from .features import TRANSFORMS, encode, legal_mask, transform_planes, transform_policy
 from .mcts import MCTS, row_col_of
+from .network import GomokuNet, save, train_batch, train_tensors
 
 
 DEFAULT_TEMPERATURE_MOVES = 12
@@ -203,6 +204,42 @@ def save_checkpoint(model: GomokuNet, path: str | Path) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     save(model, str(target))
+
+
+def train_gpu(
+    model: GomokuNet,
+    optimizer: torch.optim.Optimizer,
+    dataset,
+    steps: int = 200,
+    batch_size: int = 1024,
+    augment_data: bool = DEFAULT_AUGMENT,
+    rng: random.Random | None = None,
+    log: bool = False,
+) -> list[float]:
+    """数据、采样和增广都在显卡上做的训练循环。"""
+    picker = rng or random.Random(0)
+    losses: list[float] = []
+    for _ in range(steps):
+        planes, policy, legal, value = dataset.sample(
+            batch_size,
+            picker,
+            augment=augment_data,
+        )
+        loss, policy_loss, value_loss = train_tensors(
+            model,
+            optimizer,
+            planes,
+            policy,
+            value,
+            legal,
+        )
+        losses.append(loss)
+        if log and len(losses) % 20 == 0:
+            print(
+                f"  损失 {loss:.4f}（策略 {policy_loss:.4f}，价值 {value_loss:.4f}）",
+                flush=True,
+            )
+    return losses
 
 
 def evaluate(

@@ -5,13 +5,14 @@ from pathlib import Path
 import torch
 
 from .board import Board, other
+from .mcts import DEFAULT_CANDIDATE_WIDTH, MCTS, row_col_of
 from .network import GomokuNet, load_model
 
 
 DEFAULT_MODEL_PATH = "models/az/current.pt"
 
 
-DEFAULT_SIMULATIONS = 400
+DEFAULT_SIMULATIONS = 100_000
 
 
 DEFAULT_TEMPERATURE = 0.0
@@ -30,6 +31,8 @@ class AlphaZeroEngine:
         c_puct: float = 1.5,
         batch_size: int = 32,
         candidate_radius: int = 1,
+        candidate_width: int = DEFAULT_CANDIDATE_WIDTH,
+        time_budget: float | None = None,
         temperature: float = DEFAULT_TEMPERATURE,
         seed: int | None = None,
     ) -> None:
@@ -38,8 +41,10 @@ class AlphaZeroEngine:
         self.simulations = max(1, simulations)
         self.temperature = temperature
         self.candidate_radius = candidate_radius
+        self.time_budget = time_budget
 
         if self.model_path.is_file():
+            self.model = load_model(str(model_path), self.device)
         else:
             self.model = GomokuNet().to(self.device)
         self.model.eval()
@@ -50,6 +55,8 @@ class AlphaZeroEngine:
             c_puct=c_puct,
             batch_size=batch_size,
             candidate_radius=candidate_radius,
+            candidate_width=candidate_width,
+            time_budget=time_budget,
             seed=seed,
         )
 
@@ -92,6 +99,7 @@ class AlphaZeroEngine:
             simulations=max(1, simulations),
             add_noise=False,
             last_move=last_cell,
+            time_budget=self.time_budget,
         )
         move = (
             result.sampled_move(temperature, self.searcher.rng)

@@ -58,6 +58,9 @@ def _transforms() -> list[tuple[int, int]]:
 TRANSFORMS = _transforms()
 
 
+CELL_PERMUTATIONS = tuple(backward for _, backward in TRANSFORMS)
+
+
 def encode(board, player: int, last_move: tuple[int, int] | None) -> list[list[list[float]]]:
     planes = [
         [[0.0] * BOARD_SIZE for _ in range(BOARD_SIZE)],

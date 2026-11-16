@@ -89,7 +89,24 @@ def train_batch(
     target_policy = torch.tensor(policies, dtype=torch.float32, device=device)
     target_value = torch.tensor(values, dtype=torch.float32, device=device)
     mask = torch.tensor(legal, dtype=torch.float32, device=device)
+    return train_tensors(model, optimizer, batch, target_policy, target_value, mask)
 
+
+def train_tensors(
+    model: GomokuNet,
+    optimizer: torch.optim.Optimizer,
+    batch: torch.Tensor,
+    target_policy: torch.Tensor,
+    target_value: torch.Tensor,
+    mask: torch.Tensor,
+    use_amp: bool = True,
+) -> tuple[float, float, float]:
+    model.train()
+
+    with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp and batch.is_cuda):
+        logits, predicted = model(batch)
+        logits = logits.float()
+        predicted = predicted.float()
 
     logits = logits.masked_fill(mask == 0, -1e9)
     log_probabilities = torch.log_softmax(logits, dim=1)

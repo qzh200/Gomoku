@@ -7,7 +7,9 @@ from pathlib import Path
 
 import torch
 
+from .dataset import TensorDataset
 from .network import GomokuNet, load_model
+from .selfplay import Example, SelfPlay, evaluate, save_checkpoint, train_gpu
 
 
 DEFAULT_GAMES = 10
@@ -17,6 +19,7 @@ DEFAULT_TRAIN_STEPS = 300
 DEFAULT_BATCH_SIZE = 256
 DEFAULT_BUFFER = 60_000
 DEFAULT_MODEL_PATH = "models/az/current.pt"
+DEFAULT_TEACHER_DATA = "models/az/teacher_data.pt"
 DEFAULT_CHANNELS = 64
 DEFAULT_BLOCKS = 6
 DEFAULT_LEARNING_RATE = 1e-3
@@ -51,6 +54,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="从已有的 --model 继续，保留回放缓冲区（需要 --buffer-file）",
     )
     parser.add_argument("--buffer-file", default=None, help="回放缓冲区的存档文件")
+    parser.add_argument(
+        "--teacher-data",
+        default=DEFAULT_TEACHER_DATA,
+        help="预热阶段存下的老师样本，混进训练缓冲区，避免自对弈把老师的知识冲掉",
+    )
     return parser
 
 
@@ -78,7 +86,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"没有权重文件，从随机网络开始: {start_path}", flush=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    dataset = TensorDataset(device, capacity=args.buffer)
     if args.resume and args.buffer_file:
+        dataset = TensorDataset.load(args.buffer_file, device, args.buffer)
+        print(f"读取回放缓冲区: {len(dataset)} 个样本", flush=True)
+    if args.teacher_data:
+        teacher = TensorDataset.load(args.teacher_data, device)
+        if len(teacher):
+            dataset.merge(teacher)
+            print(
+                f"混入老师样本: {len(teacher)} 个，缓冲区共 {len(dataset)}",
+                flush=True,
+            )
+        else:
+            print(f"没有可用的老师样本: {args.teacher_data}", flush=True)
     player = SelfPlay(
         model,
         device,
@@ -96,13 +117,16 @@ def main(argv: list[str] | None = None) -> int:
         wins = {1: 0, 2: 0}
         for _ in range(args.games):
             game = player.play_game()
+            dataset.extend(game.examples)
             if game.winner is not None:
                 wins[game.winner] += 1
 
 
         validation = player.play_game().examples
+        losses = train_gpu(
             model,
             optimizer,
+            dataset,
             steps=args.train_steps,
             batch_size=args.batch_size,
             augment_data=not args.no_augment,
@@ -112,10 +136,12 @@ def main(argv: list[str] | None = None) -> int:
         policy_loss, value_loss = evaluate(model, validation, device)
         save_checkpoint(model, model_path)
         if args.buffer_file:
+            dataset.save(args.buffer_file)
         elapsed = time.monotonic() - started
         last = losses[-1] if losses else float("nan")
         print(
             f"第 {iteration} 轮: 胜负 {wins[1]}:{wins[2]}，"
+            f"缓冲区 {len(dataset)}，训练损失 {last:.4f}，"
             f"验证策略 {policy_loss:.4f} 验证价值 {value_loss:.4f}，"
             f"用时 {elapsed:.0f} 秒",
             flush=True,

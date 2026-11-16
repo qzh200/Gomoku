@@ -8,10 +8,11 @@ from classical_worker.search import Searcher
 
 from .board import BLACK, WHITE, Board, other
 from .engine import AlphaZeroEngine
+from .mcts import DEFAULT_CANDIDATE_WIDTH
 
 
 DEFAULT_GAMES = 10
-DEFAULT_SIMULATIONS = 400
+DEFAULT_SIMULATIONS = 100_000
 DEFAULT_CLASSICAL_DEPTH = 4
 DEFAULT_CLASSICAL_WIDTH = 12
 DEFAULT_CLASSICAL_TIME = 0.5
@@ -26,6 +27,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--classical-depth", type=int, default=DEFAULT_CLASSICAL_DEPTH)
     parser.add_argument("--classical-width", type=int, default=DEFAULT_CLASSICAL_WIDTH)
     parser.add_argument("--classical-time", type=float, default=DEFAULT_CLASSICAL_TIME)
+    parser.add_argument("--candidate-width", type=int, default=DEFAULT_CANDIDATE_WIDTH)
+    parser.add_argument("--time-budget", type=float, default=None, help="AlphaZero 每手秒数上限")
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
     return parser
 
@@ -62,6 +65,8 @@ def main(argv: list[str] | None = None) -> int:
         model_path=args.model,
         device=args.device,
         simulations=args.simulations,
+        candidate_width=args.candidate_width,
+        time_budget=args.time_budget,
         seed=args.seed,
     )
     classical = Searcher(

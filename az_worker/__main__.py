@@ -47,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
         c_puct=settings.c_puct,
         batch_size=settings.batch_size,
         candidate_radius=settings.candidate_radius,
+        candidate_width=settings.candidate_width,
+        time_budget=settings.time_budget,
         temperature=settings.temperature,
     )
     worker = Worker(
