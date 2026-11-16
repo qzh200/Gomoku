@@ -171,17 +171,17 @@ class LLMEngine:
         attacks = self._attack_cells(board_state, player)
         if attacks:
             notes.append(
-                "4. 你可以在这里把自己的棋子接成四子，抢占主动："
+                "4. 【首选进攻点】在这里落子能把你的棋子接成四子，抢占主动："
                 + "、".join(f"({r}, {c})" for r, c in attacks)
-                + "。"
+                + "。对方必须来堵，堵完你就再长一子成五连。"
             )
 
         builds = self._build_cells(board_state, player)
         if builds:
             notes.append(
-                "5. 想从零开始布阵时，可以把棋子接成三子："
-                + "、".join(f"({r}, {c})" for r, c in builds)
-                + "。"
+                "5. 【扩展点】在这里落子能把你的棋子接得更长："
+                + "、".join(f"({r}, {c})" for r, c in builds[:8])
+                + "。优先选这些点，别让棋子散开。"
             )
 
         if not notes:
@@ -223,15 +223,19 @@ class LLMEngine:
     ) -> list[tuple[int, int]]:
         cells = []
         for run, free in board.connected_lines(board_state, player, 3):
-            if len(run) == 3 and len(free) == 2:
+            if len(run) == 3:
                 cells.extend(free)
         return cells
 
     def _build_cells(
         self, board_state: list[list[int]], player: int
     ) -> list[tuple[int, int]]:
-        cells = []
+        """能把我的棋子接得更长的落点。接得越长的排越前。"""
+        scored: dict[tuple[int, int], int] = {}
+        for run, free in board.connected_lines(board_state, player, 1):
+            for cell in free:
+                scored[cell] = max(scored.get(cell, 0), len(run))
         for run, free in board.connected_lines(board_state, player, 2):
-            if len(run) == 2 and free:
-                cells.extend(free)
-        return cells
+            for cell in free:
+                scored[cell] = max(scored.get(cell, 0), len(run))
+        return [cell for cell, _ in sorted(scored.items(), key=lambda item: -item[1])]
