@@ -66,6 +66,23 @@ python mock_worker/mock_worker.py --engine classical --token <engine_token>
 
 它只用标准库，完整演示了长轮询、租约使用、幂等提交与冲突处理。
 
+## LLM 引擎
+
+`llm_worker/` 是一个真正的 LLM 引擎：它按同一套 Worker 协议领任务，用
+**OpenAI 兼容协议**向模型服务提问，把答案校验成合法落点后提交。
+
+```sh
+cp llm_worker/.env.example llm_worker/.env   # 填参数
+python -m llm_worker
+```
+
+参数写在 `.env` 里：MyGo 地址与 `llm` 引擎令牌、模型服务地址与 API Key、模型名、
+温度、超时。`OPENAI_BASE_URL` 一换就能用 DeepSeek、Moonshot、Ollama、LM Studio、
+vLLM 等兼容服务。模型思考期间后台续租约，慢模型也不会丢手；回答不合法会带着
+原因让模型重选。
+
+设计与参数说明见 [`docs/llm-engine.md`](docs/llm-engine.md)。
+
 ## 接口一览
 
 | 方法 | 路径 | 说明 |
@@ -100,13 +117,16 @@ transport/http ──▶ application
 gofmt -l .
 go vet ./...
 go test ./...
+python -m unittest discover -s llm_worker/tests -t .
 ```
 
 * `internal/domain/gomoku`：四方向胜负、平局、非法落点。
 * `internal/scheduler`：租约原子领取、过期重分配、续期、释放、失效。
 * `tests/contracts`：真实 HTTP 路由上的契约测试，覆盖三种模式、错误码、幂等、
-  版本冲突、并发领取、暂停使租约失效，以及 Python mock worker 独立完成整局。
+  版本冲突、并发领取、暂停使租约失效，以及 Python mock worker 与 LLM worker
+  各自独立完成整局。
 * `ui`：`ui.NewTester` 无头渲染与交互断言。
+* `llm_worker/tests`：参数解析、棋盘绘制、坐标解析、落点校验的单元测试。
 
 ## 安全边界
 
