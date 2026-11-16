@@ -62,6 +62,12 @@ func run(addr string) error {
 		log.Printf("未找到 %s，使用内置引擎与随机令牌", configPath)
 	}
 
+	// The workers learn their token from this file, so nobody has to copy it.
+	runtimePath := os.Getenv(config.RuntimePathEnv)
+	if runtimePath == "" {
+		runtimePath = config.RuntimePath
+	}
+
 	games := repository.NewMemoryGames()
 	leases := scheduler.NewLeaseManager()
 	idem := repository.NewMemoryIdempotency()
@@ -90,6 +96,27 @@ func run(addr string) error {
 		defer cancel()
 		_ = httpServer.Shutdown(ctx)
 	}()
+
+	// The file is written once the server listens, so it never holds the
+	// token of a process that did not come up.
+	entries := make([]auth.EngineConfig, 0, len(cfg.Engines))
+	for _, engine := range registry.Engines() {
+		available := engine.Available
+		entries = append(entries, auth.EngineConfig{
+			EngineID:    engine.EngineID,
+			DisplayName: engine.DisplayName,
+			Token:       engine.Token,
+			Available:   &available,
+		})
+	}
+	if err := config.SaveRuntime(runtimePath, auth.Config{
+		Engines:          entries,
+		LocalClientToken: registry.LocalToken(),
+	}); err != nil {
+		log.Printf("写入运行时配置失败，Worker 需要手动配置令牌: %v", err)
+	} else {
+		log.Printf("引擎令牌已写入 %s", runtimePath)
+	}
 
 	log.Printf("API 已启动: http://%s/api/v1", listener.Addr().String())
 	log.Printf("本地客户端令牌: %s", registry.LocalToken())

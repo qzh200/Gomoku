@@ -1,5 +1,6 @@
 # 运行期生成的引擎配置与凭据
 configs/engines.json
+configs/engines.runtime.json
 
 # 引擎参数文件，含 API Key
 .env
