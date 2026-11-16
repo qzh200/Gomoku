@@ -66,6 +66,22 @@ python mock_worker/mock_worker.py --engine classical --token <engine_token>
 
 它只用标准库，完整演示了长轮询、租约使用、幂等提交与冲突处理。
 
+## 传统算法引擎
+
+`classical_worker/` 是 `classical` 引擎：不用模型，靠搜索。**negamax + alpha-beta
+剪枝 + 贪心排序**，逐层加深，单手约 0.2–0.7 秒。
+
+```sh
+go run ./cmd/app                  # 先起 MyGo，它写令牌
+python -m classical_worker
+```
+
+- 评分按连子算（长度 × 开口数），落子/撤销时增量更新；
+- 贪心排序决定先看哪些点，是 alpha-beta 能剪枝的前提；
+- 搜索前先做两条直判：能连五就连五，对手要连五就堵。
+
+算法细节、评分表与参数见 [`docs/classical-engine.md`](docs/classical-engine.md)。
+
 ## LLM 引擎
 
 `llm_worker/` 是一个真正的 LLM 引擎：它按同一套 Worker 协议领任务，用
@@ -76,6 +92,8 @@ go run ./cmd/app                       # 先起 MyGo，它会把令牌写进 con
 cp llm_worker/.env.example llm_worker/.env   # 填模型参数
 python -m llm_worker
 ```
+
+两个引擎共用 `aiworker/`（领任务、租约、提交、令牌与参数），各自只管"下哪里"。
 
 **令牌不用手工复制**：MyGo 启动时把生效的引擎注册表写到
 `configs/engines.runtime.json`，Worker 从那里读自己的 token。
@@ -121,15 +139,18 @@ transport/http ──▶ application
 gofmt -l .
 go vet ./...
 go test ./...
+python -m unittest discover -s classical_worker/tests -t .
 python -m unittest discover -s llm_worker/tests -t .
 ```
 
 * `internal/domain/gomoku`：四方向胜负、平局、非法落点。
 * `internal/scheduler`：租约原子领取、过期重分配、续期、释放、失效。
 * `tests/contracts`：真实 HTTP 路由上的契约测试，覆盖三种模式、错误码、幂等、
-  版本冲突、并发领取、暂停使租约失效，以及 Python mock worker 与 LLM worker
-  各自独立完成整局。
+  版本冲突、并发领取、暂停使租约失效，以及三个 Python worker（mock、传统算法、
+  LLM）各自独立完成整局。
 * `ui`：`ui.NewTester` 无头渲染与交互断言。
+* `classical_worker/tests`：评分、落子/撤销、连五与堵四、候选排序，以及
+  alpha-beta 与不剪枝 negamax 的等价性。
 * `llm_worker/tests`：参数解析、棋盘绘制、坐标解析、落点校验的单元测试。
 
 ## 安全边界
