@@ -144,5 +144,5 @@ go test ./tests/contracts/ -run TestClassicalWorkerFinishesAGame
 - 没有必胜/必败的静态剪枝，靠 alpha-beta 与时间预算；
 - 禁手规则未实现（与协议一致：第一版无禁手）。
 
-下一版可以加的：置换表、Zobrist 哈希、杀手着法与历史启发、只考虑
-"威胁点"的强制着法生成、开局库。
+第二代的设计见 [`classical-engine-v2.md`](classical-engine-v2.md)：窗口棋型表、
+威胁强制着、Zobrist 置换表 + PVS、VCF/VCT，以及分阶段的棋力验收门槛。

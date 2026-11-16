@@ -81,6 +81,8 @@ python -m classical_worker
 - 搜索前先做两条直判：能连五就连五，对手要连五就堵。
 
 算法细节、评分表与参数见 [`docs/classical-engine.md`](docs/classical-engine.md)。
+第二代设计（窗口棋型表、威胁强制着、置换表 PVS、VCF/VCT）见
+[`docs/classical-engine-v2.md`](docs/classical-engine-v2.md)。
 
 ## LLM 引擎
 
