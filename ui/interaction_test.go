@@ -185,3 +185,54 @@ func TestHistoryShowsEveryMove(t *testing.T) {
 		}
 	}
 }
+
+func TestReplayRewindsAPastGame(t *testing.T) {
+	app := newTestApp(t)
+	app.st.modeIndex = 2
+	app.newGame()
+	for _, move := range [][2]int{{7, 7}, {7, 8}, {6, 6}, {8, 8}} {
+		app.pick(move[0], move[1])
+	}
+	past := app.games.List()[0]
+	app.newGame()
+
+	tester := mygoui.NewTester(app.View(), 1180, 800)
+	tester.Advance(200 * time.Millisecond)
+
+	if !tester.HasText("棋局回溯") {
+		t.Fatalf("界面必须有棋局回溯面板, 实际 %v", tester.Texts())
+	}
+	if tester.HasText(past.ID) {
+		t.Fatalf("界面不能显示棋局编号 %q", past.ID)
+	}
+
+	app.startReview(past)
+	tester.Frame()
+	if !tester.HasText("回溯 · 第 4 / 4 手") {
+		t.Fatalf("回溯必须停在末手, 实际 %v", tester.Texts())
+	}
+	if app.board.Game == nil || app.board.Game.MoveCount != 4 {
+		t.Fatalf("回溯棋盘必须还原 4 手")
+	}
+
+	app.setReviewStep(1)
+	tester.Frame()
+	if app.board.Game == nil || app.board.Game.MoveCount != 1 || app.board.Game.Board[7][8] != 0 {
+		t.Fatalf("回溯到第 1 手时棋盘只能保留 1 个棋子")
+	}
+
+	app.stepReview(-5)
+	tester.Frame()
+	if app.board.Game == nil || app.board.Game.MoveCount != 0 {
+		t.Fatalf("回溯不能越过开局")
+	}
+
+	app.stopReview()
+	tester.Frame()
+	app.mu.Lock()
+	live := app.st.game
+	app.mu.Unlock()
+	if live == nil || live.MoveCount != 0 {
+		t.Fatalf("退出回溯后必须回到当前对局")
+	}
+}

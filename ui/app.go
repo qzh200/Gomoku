@@ -29,6 +29,12 @@ type state struct {
 	status     string
 	notice     string
 	noticeKind noticeKind
+
+	replayGames []*gomoku.Game
+	reviewing   bool
+	reviewGame  *gomoku.Game
+	reviewMoves []gomoku.Move
+	reviewStep  int
 }
 
 type noticeKind int
@@ -55,7 +61,9 @@ type App struct {
 	board *BoardView
 	win   *mygo.Window
 
-	list mygoui.ListState
+	list       mygoui.ListState
+	replayList mygoui.ListState
+	reviewList mygoui.ListState
 }
 
 func New(games *application.GameService, moves *application.MoveService, registry *auth.Registry) *App {
@@ -88,12 +96,8 @@ func (a *App) StartPolling() {
 		for range ticker.C {
 			a.mu.Lock()
 			win := a.win
-			id := a.st.gameID
 			a.mu.Unlock()
 			if win == nil {
-				continue
-			}
-			if id == "" {
 				continue
 			}
 			a.refresh()
@@ -174,6 +178,7 @@ func (a *App) newGame() {
 	a.st.noticeKind = noticeNone
 	a.st.status = describeGame(result.Game)
 	a.mu.Unlock()
+	a.stopReview()
 	a.refresh()
 }
 
@@ -244,6 +249,7 @@ func (a *App) togglePause() {
 }
 
 func (a *App) refresh() {
+	a.refreshReplay()
 	a.mu.Lock()
 	id := a.st.gameID
 	a.mu.Unlock()
@@ -263,6 +269,97 @@ func (a *App) refresh() {
 	a.st.history = history
 	a.st.status = describeGame(game)
 	a.mu.Unlock()
+}
+
+const replayLimit = 12
+
+func (a *App) refreshReplay() {
+	games := a.games.List()
+	recent := make([]*gomoku.Game, 0, len(games))
+	for i := len(games) - 1; i >= 0 && len(recent) < replayLimit; i-- {
+		recent = append(recent, games[i])
+	}
+	a.mu.Lock()
+	a.st.replayGames = recent
+	a.mu.Unlock()
+}
+
+func (a *App) startReview(game *gomoku.Game) {
+	if game == nil {
+		return
+	}
+	moves, err := a.moves.History(game.ID)
+	if err != nil {
+		a.setError(err)
+		return
+	}
+	a.mu.Lock()
+	a.st.reviewing = true
+	a.st.reviewGame = game.Clone()
+	a.st.reviewMoves = moves
+	a.st.reviewStep = len(moves)
+	a.mu.Unlock()
+}
+
+func (a *App) stopReview() {
+	a.mu.Lock()
+	a.st.reviewing = false
+	a.st.reviewGame = nil
+	a.st.reviewMoves = nil
+	a.st.reviewStep = 0
+	a.mu.Unlock()
+}
+
+func (a *App) stepReview(delta int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.setReviewStepLocked(a.st.reviewStep + delta)
+}
+
+func (a *App) setReviewStep(step int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.setReviewStepLocked(step)
+}
+
+func (a *App) setReviewStepLocked(step int) {
+	if !a.st.reviewing {
+		return
+	}
+	if step < 0 {
+		step = 0
+	}
+	if step > len(a.st.reviewMoves) {
+		step = len(a.st.reviewMoves)
+	}
+	a.st.reviewStep = step
+}
+
+func replayPosition(game *gomoku.Game, moves []gomoku.Move, step int) *gomoku.Game {
+	if game == nil {
+		return nil
+	}
+	if step < 0 {
+		step = 0
+	}
+	if step > len(moves) {
+		step = len(moves)
+	}
+	position := gomoku.NewGame(game.ID, game.Mode, game.Black(), game.White())
+	for i := range step {
+		position.Place(moves[i].Row, moves[i].Col, moves[i].Player)
+	}
+	position.AIThinking = false
+	if step == len(moves) {
+		position.Status = game.Status
+		position.Result = game.Result
+		position.Execution = game.Execution
+		if game.Winner != nil {
+			winner := *game.Winner
+			position.Winner = &winner
+		}
+	}
+	return position
 }
 
 func (a *App) snapshot() *gomoku.Game {

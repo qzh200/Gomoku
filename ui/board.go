@@ -39,6 +39,8 @@ type geometry struct {
 type BoardView struct {
 	Game *gomoku.Game
 
+	ReadOnly bool
+
 	HoverRow int
 	HoverCol int
 
@@ -85,6 +87,9 @@ func (b *BoardView) View(c *mygo.Context, size float32) mygo.Element {
 	b.measureLabels(c)
 	board := mygo.Box(c).Size(geo.Size, geo.Size).Radius(boardRadius)
 	board.HandleInput(func(ev mygo.InputEvent) bool {
+		if b.ReadOnly {
+			return false
+		}
 		switch ev.Kind {
 		case mygo.InputPointerDown:
 			row, col := b.cellAt(geo, ev.X, ev.Y)

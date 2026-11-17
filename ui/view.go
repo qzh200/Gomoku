@@ -65,19 +65,12 @@ func (a *App) buildToolbar(c *mygo.Context, tk *theme.Tokens) {
 }
 
 func (a *App) buildToolbarTitle(c *mygo.Context) {
-	a.mu.Lock()
-	game := a.st.game
-	a.mu.Unlock()
 	display.Icon(c, lucide.Grid3x3(), display.IconProps{Size: display.IconMiddle})
 	display.Text(c, "五子棋", display.TextProps{Heading: 4})
-	if game == nil {
-		return
-	}
-	display.Text(c, game.ID, display.TextProps{Type: display.TextSecondary, FontSize: 13})
 }
 func (a *App) buildThinking(c *mygo.Context) {
 	a.mu.Lock()
-	thinking := a.st.game != nil && a.st.game.AIThinking
+	thinking := !a.st.reviewing && a.st.game != nil && a.st.game.AIThinking
 	a.mu.Unlock()
 	if !thinking {
 		return
@@ -92,7 +85,15 @@ func (a *App) buildStatus(c *mygo.Context, tk *theme.Tokens) {
 	a.mu.Lock()
 	game := a.st.game
 	status := a.st.status
+	reviewing := a.st.reviewing
+	reviewStep := a.st.reviewStep
+	reviewTotal := len(a.st.reviewMoves)
 	a.mu.Unlock()
+	if reviewing {
+		display.Tag(c, fmt.Sprintf("回溯 · 第 %d / %d 手", reviewStep, reviewTotal),
+			display.TagProps{Color: display.TagOrange, Round: true})
+		return
+	}
 	if game == nil {
 		display.Text(c, "选择模式并开始一局新棋", display.TextProps{Type: display.TextSecondary, FontSize: 13})
 		return
@@ -106,21 +107,102 @@ func (a *App) buildStatus(c *mygo.Context, tk *theme.Tokens) {
 }
 
 func (a *App) buildSidebar(c *mygo.Context, tk *theme.Tokens) {
-	mygo.Column(c).Width(sidebarWidth).AlignSelf(mygo.Start).Gap(columnGap).Children(func() {
-		panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(16).Radius(tk.BorderRadiusLG)
-		panel.Children(func() {
-			mygo.Column(c).Gap(14).Children(func() {
-				display.Text(c, "新对局", display.TextProps{Strong: true})
-				a.buildModePicker(c)
-				a.buildEnginePicker(c)
-				a.buildNewGameButton(c)
-				a.buildPauseButton(c)
-				a.buildResult(c)
-				a.buildNotice(c)
+	column := mygo.Column(c).Width(sidebarWidth).MinHeight(0)
+	column.Children(func() {
+		scroll := layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Vertical}, func() {
+			mygo.Column(c).Gap(columnGap).Width(sidebarWidth - 8).Children(func() {
+				panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(16).Radius(tk.BorderRadiusLG)
+				panel.Children(func() {
+					mygo.Column(c).Gap(14).Children(func() {
+						display.Text(c, "新对局", display.TextProps{Strong: true})
+						a.buildModePicker(c)
+						a.buildEnginePicker(c)
+						a.buildNewGameButton(c)
+						a.buildPauseButton(c)
+						a.buildResult(c)
+						a.buildNotice(c)
+					})
+				})
+				a.buildGameInfo(c, tk)
+				a.buildReplayPanel(c, tk)
 			})
 		})
-		a.buildGameInfo(c, tk)
+		scroll.Grow(1).Basis(0)
 	})
+}
+
+func (a *App) buildReplayPanel(c *mygo.Context, tk *theme.Tokens) {
+	a.mu.Lock()
+	games := a.st.replayGames
+	reviewing := a.st.reviewing
+	a.mu.Unlock()
+
+	panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(16).Radius(tk.BorderRadiusLG)
+	panel.Children(func() {
+		mygo.Column(c).Gap(8).Children(func() {
+			mygo.Row(c).AlignItems(mygo.Center).Children(func() {
+				display.Text(c, "棋局回溯", display.TextProps{Strong: true})
+				mygo.Spacer(c).Grow(1).Basis(0)
+				if reviewing {
+					exit := action.Button(c, "退出回溯", action.ButtonProps{Variant: action.Text, Size: theme.Small})
+					if exit.Clicked() {
+						a.stopReview()
+					}
+				}
+			})
+			if len(games) == 0 {
+				display.Text(c, "暂无可回溯的棋局", display.TextProps{Type: display.TextSecondary, FontSize: 13})
+				return
+			}
+			mygo.List(c, &a.replayList, len(games), func(i int) {
+				a.buildReplayRow(c, games[i], tk)
+			}).Height(150)
+		})
+	})
+}
+
+func (a *App) buildReplayRow(c *mygo.Context, game *gomoku.Game, tk *theme.Tokens) {
+	a.mu.Lock()
+	active := a.st.reviewing && a.st.reviewGame != nil && a.st.reviewGame.ID == game.ID
+	a.mu.Unlock()
+
+	row := mygo.Row(c).Gap(8).AlignItems(mygo.Center).Padding(6, 6).Radius(6).Cursor(mygo.CursorPointer)
+	row.OnClick(func() { a.startReview(game) })
+	if active {
+		row.Background(tk.FillSecondary)
+	}
+	row.Children(func() {
+		mygo.Column(c).Gap(2).Children(func() {
+			display.Text(c, modeLabel(game.Mode), display.TextProps{FontSize: 13})
+			display.Text(c, replaySummary(game), display.TextProps{Type: display.TextSecondary, FontSize: 11})
+		})
+		mygo.Spacer(c).Grow(1).Basis(0)
+		if label, color, ok := replayResult(game); ok {
+			display.Tag(c, label, display.TagProps{Color: color, Size: theme.Small, Round: true})
+		}
+	})
+}
+
+func replaySummary(game *gomoku.Game) string {
+	if game.Status == gomoku.StatusFinished {
+		return fmt.Sprintf("共 %d 手", game.MoveCount)
+	}
+	return fmt.Sprintf("进行中 · %d 手", game.MoveCount)
+}
+
+func replayResult(game *gomoku.Game) (string, display.TagColor, bool) {
+	if game.Status != gomoku.StatusFinished {
+		return "", "", false
+	}
+	switch game.Result {
+	case gomoku.ResultBlackWin:
+		return "黑胜", display.TagGray, true
+	case gomoku.ResultWhiteWin:
+		return "白胜", display.TagBlue, true
+	case gomoku.ResultDraw:
+		return "平局", display.TagGold, true
+	}
+	return "已结束", display.TagGray, true
 }
 
 func (a *App) buildModePicker(c *mygo.Context) {
@@ -329,9 +411,21 @@ func (a *App) buildInfoRow(c *mygo.Context, icon *mygo.SVG, label, value string)
 func (a *App) buildBoardArea(c *mygo.Context, tk *theme.Tokens) {
 	a.mu.Lock()
 	game := a.st.game
+	reviewing := a.st.reviewing
+	reviewGame := a.st.reviewGame
+	reviewMoves := a.st.reviewMoves
+	reviewStep := a.st.reviewStep
 	a.mu.Unlock()
-	a.board.Game = game
-	a.board.OnPick = a.pick
+
+	if reviewing && reviewGame != nil {
+		a.board.Game = replayPosition(reviewGame, reviewMoves, reviewStep)
+		a.board.ReadOnly = true
+		a.board.OnPick = nil
+	} else {
+		a.board.Game = game
+		a.board.ReadOnly = false
+		a.board.OnPick = a.pick
+	}
 
 	card := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Grow(1).Basis(0).
 		Padding(16).Radius(tk.BorderRadiusLG)
@@ -374,24 +468,57 @@ func (a *App) buildHistory(c *mygo.Context, tk *theme.Tokens) {
 	a.mu.Lock()
 	history := a.st.history
 	game := a.st.game
+	reviewing := a.st.reviewing
+	reviewMoves := a.st.reviewMoves
+	reviewStep := a.st.reviewStep
+	reviewTotal := len(a.st.reviewMoves)
 	a.mu.Unlock()
+
+	if reviewing {
+		history = reviewMoves
+	}
 
 	panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Width(historyWidth).
 		Padding(16).Radius(tk.BorderRadiusLG)
 	panel.Children(func() {
 		mygo.Column(c).Gap(10).Grow(1).Basis(0).Children(func() {
 			display.Text(c, "落子记录", display.TextProps{Strong: true})
+			if reviewing {
+				a.buildReviewControls(c, reviewStep, reviewTotal)
+			}
 			if len(history) == 0 {
 				display.Text(c, "还没有落子", display.TextProps{Type: display.TextSecondary, FontSize: 13})
 				return
 			}
 			a.buildHistoryHeader(c)
+			if reviewing {
+				a.reviewList.FollowEnd = false
+				mygo.List(c, &a.reviewList, len(history), func(i int) {
+					a.buildHistoryRow(c, history[i], i == reviewStep-1, i+1, tk)
+				}).Grow(1).Basis(0)
+				return
+			}
 			a.list.FollowEnd = true
 			last := game != nil && game.LastMove != nil
 			mygo.List(c, &a.list, len(history), func(i int) {
-				a.buildHistoryRow(c, history[i], last && history[i].Number == game.LastMove.Number, tk)
+				a.buildHistoryRow(c, history[i], last && history[i].Number == game.LastMove.Number, -1, tk)
 			}).Grow(1).Basis(0)
 		})
+	})
+}
+
+func (a *App) buildReviewControls(c *mygo.Context, step, total int) {
+	mygo.Row(c).Gap(6).AlignItems(mygo.Center).Children(func() {
+		prev := iconButton(c, lucide.ChevronLeft(), "上一手", action.ButtonProps{Variant: action.Default, Size: theme.Small})
+		if prev.Clicked() {
+			a.stepReview(-1)
+		}
+		display.Text(c, fmt.Sprintf("%d/%d", step, total),
+			display.TextProps{Type: display.TextSecondary, FontSize: 12})
+		next := iconButton(c, lucide.ChevronRight(), "下一手", action.ButtonProps{Variant: action.Default, Size: theme.Small})
+		if next.Clicked() {
+			a.stepReview(1)
+		}
 	})
 }
 
@@ -406,7 +533,7 @@ func (a *App) buildHistoryHeader(c *mygo.Context) {
 	})
 }
 
-func (a *App) buildHistoryRow(c *mygo.Context, move gomoku.Move, last bool, tk *theme.Tokens) {
+func (a *App) buildHistoryRow(c *mygo.Context, move gomoku.Move, highlight bool, step int, tk *theme.Tokens) {
 	row := mygo.Row(c).Gap(historyColumnGap).AlignItems(mygo.Center).Padding(3, 6).Radius(6).Children(func() {
 		historyCell(c, historyNumberWidth, fmt.Sprintf("%d", move.Number),
 			display.TextProps{Type: display.TextSecondary, FontSize: 12})
@@ -417,7 +544,10 @@ func (a *App) buildHistoryRow(c *mygo.Context, move gomoku.Move, last bool, tk *
 		player.Width(historyPlayerWidth)
 		historyCell(c, historyPlaceWidth, placeLabel(move.Row, move.Col), display.TextProps{FontSize: 13})
 	})
-	if last {
+	if step > 0 {
+		row.Cursor(mygo.CursorPointer).OnClick(func() { a.setReviewStep(step) })
+	}
+	if highlight {
 		row.Background(tk.FillSecondary)
 	}
 }
