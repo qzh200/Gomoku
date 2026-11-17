@@ -168,17 +168,16 @@ class Position:
         return len(self.stones) == BOARD_SIZE * BOARD_SIZE
 
 
-    def neighbours(self, radius: int = 1) -> list[tuple[int, int]]:
-        if radius == 1 and self._neighbour_cache is not None:
+    def neighbours(self) -> list[tuple[int, int]]:
+        if self._neighbour_cache is not None:
             return self._neighbour_cache
-        cells: dict[tuple[int, int], None] = {}
+        cells: set[tuple[int, int]] = set()
         for row, col, _ in self.stones:
-            for dr in range(-radius, radius + 1):
-                for dc in range(-radius, radius + 1):
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
                     r, c = row + dr, col + dc
                     if in_bounds(r, c) and self.grid[r][c] == EMPTY:
-                        cells[(r, c)] = None
+                        cells.add((r, c))
         found = sorted(cells)
-        if radius == 1:
-            self._neighbour_cache = found
+        self._neighbour_cache = found
         return found

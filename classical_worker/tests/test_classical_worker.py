@@ -114,7 +114,6 @@ class PositionTests(unittest.TestCase):
         self.assertIn((7, 8), cells)
         self.assertNotIn((7, 9), cells)
         self.assertNotIn((0, 0), cells)
-        self.assertIn((7, 9), position.neighbours(radius=2))
 
 class ThreatTests(unittest.TestCase):
     def test_an_open_three_has_two_ways_to_an_open_four(self) -> None:

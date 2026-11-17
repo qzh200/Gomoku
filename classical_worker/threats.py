@@ -46,8 +46,6 @@ def _classify_line(text: str) -> tuple[int, int, int]:
 
 
     for start in range(5):
-        if not start <= 4 <= start + 4:
-            continue
         window = text[start : start + 5]
         ones = window.count(OWN)
         if ones == 5:

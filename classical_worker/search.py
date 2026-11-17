@@ -39,14 +39,12 @@ class Searcher:
         time_budget: float = DEFAULT_TIME_BUDGET,
         vcf_budget: float = DEFAULT_VCF_BUDGET,
         tt_entries: int = DEFAULT_TT_ENTRIES,
-        max_nodes: int | None = None,
     ) -> None:
         self.depth = max(2, depth)
         self.width = max(4, width)
         self._limit = self.width
         self.time_budget = max(0.05, time_budget)
         self.vcf_budget = max(0.0, vcf_budget)
-        self.max_nodes = max_nodes
 
         self.table = TranspositionTable(tt_entries)
         self.history: dict[tuple[int, int, int], int] = {}
@@ -119,9 +117,8 @@ class Searcher:
             except SearchTimeout:
                 break
             moves = None
-            if move is not None:
-                best = move
-                self.depth_reached = current
+            best = move
+            self.depth_reached = current
             if value >= MATE_THRESHOLD:
                 break
             if time.monotonic() > self.soft_deadline:
@@ -253,7 +250,5 @@ class Searcher:
 
     def _tick(self) -> None:
         self.nodes += 1
-        if self.max_nodes is not None and self.nodes >= self.max_nodes:
-            raise SearchTimeout
         if self.nodes % 16 == 0 and time.monotonic() > self.deadline:
             raise SearchTimeout
