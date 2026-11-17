@@ -49,9 +49,8 @@ python -m classical_worker.benchmark --games 20 --budget 0.2
 ```
 
 局数不能太少，也不能关掉随机开局：温度 0 时同一对权重的对局完全确定，`--opening-moves 0`
-会把 N 局压缩成 2 个棋局（实测同一对权重在无开局时 40:0，成对开局后 22:18）。8 局只能
-发现大缺陷（例如价值头方向错误导致 0:8）。小差异看固定局面的价值头符号，或威胁平面上的
-堵点正确率（见 `doc/05-az-engine.md` §4）。
+会把 N 局压缩成 2 个棋局。8 局只够发现大缺陷；判断小差异要看固定局面的价值头符号，
+或威胁平面上的堵点正确率（见 `doc/05-az-engine.md` §4）。
 
 ### 3.3 LLM：固定局面探针
 
@@ -224,9 +223,9 @@ python -m unittest discover -s llm_worker/tests -t .
   --buffer-file models/az/replay.pt --resume
 ```
 
-默认预算在 RTX 4060 Laptop 上约 2–3 小时（实测：全盘 400 模拟 0.34 s/手，
-bs 256 梯度一步 17.9 ms）。要更强就加 `--total-steps`、`--games`、`--iterations`，
-方法与代码不用改。训练会占满显存，建议与 Worker 分开运行。
+默认预算在 RTX 4060 Laptop 上约 2–3 小时；梯度步只占其中约 8 分钟，其余时间用于自对弈。
+要提高棋力，增加 `--total-steps`、`--games`、`--iterations`，方法与代码不用改。训练会
+占满显存，建议与 Worker 分开运行。
 
 ## 6. 故障排查
 
