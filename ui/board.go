@@ -46,18 +46,19 @@ type BoardView struct {
 
 	OnPick func(row, col int)
 
-	wood     mygo.Color
-	line     mygo.Color
-	black    mygo.Color
-	blackTop mygo.Color
-	white    mygo.Color
-	whiteTop mygo.Color
-	star     mygo.Color
-	edge     mygo.Color
-	label    mygo.Color
-	accent   mygo.Color
-	labelW   map[string]float32
-	labelH   float32
+	surfaceTop mygo.Color
+	surfaceLow mygo.Color
+	line       mygo.Color
+	black      mygo.Color
+	blackTop   mygo.Color
+	white      mygo.Color
+	whiteTop   mygo.Color
+	star       mygo.Color
+	edge       mygo.Color
+	label      mygo.Color
+	accent     mygo.Color
+	labelW     map[string]float32
+	labelH     float32
 
 	rect mygo.Rect
 }
@@ -67,19 +68,24 @@ func newBoardView() *BoardView {
 }
 
 func (b *BoardView) applyTheme(tk *theme.Tokens) {
-	b.wood = mygo.RGB(214, 178, 128)
-	b.line = mygo.RGB(120, 88, 52)
-	b.black = mygo.RGB(16, 16, 20)
-	b.blackTop = mygo.RGB(74, 74, 84)
-	b.white = mygo.RGB(214, 214, 222)
-	b.whiteTop = mygo.RGB(255, 255, 255)
-	b.star = mygo.RGB(120, 88, 52)
-	b.edge = mygo.RGB(150, 110, 66)
-	b.label = mygo.RGB(110, 78, 44)
-	b.accent = mygo.RGB(214, 96, 77)
-	if tk != nil {
-		b.accent = tk.Error
+	p := paletteOf(tk)
+	if tk != nil && tk.Dark {
+		b.surfaceTop = mygo.Hex("#2e2822")
+		b.surfaceLow = mygo.Hex("#1f1b16")
+		b.line = mygo.Hex("#4a4036")
+		b.edge = mygo.Hex("#3a332c")
+		b.label = mygo.Hex("#8f8579")
+	} else {
+		b.surfaceTop = mygo.Hex("#f1e3c9")
+		b.surfaceLow = mygo.Hex("#ddc29c")
+		b.line = mygo.Hex("#c2a37a")
+		b.edge = mygo.Hex("#d3bb96")
+		b.label = mygo.Hex("#97825f")
 	}
+	b.star = p.accent.Alpha(0.55)
+	b.accent = p.accent
+	b.blackTop, b.black = stoneColors(true, tk)
+	b.whiteTop, b.white = stoneColors(false, tk)
 }
 
 func (b *BoardView) View(c *mygo.Context, size float32) mygo.Element {
@@ -145,8 +151,14 @@ func (b *BoardView) cellAt(geo geometry, x, y float32) (int, int) {
 
 func (b *BoardView) paint(p *mygo.Painter, r mygo.Rect, geo geometry) {
 	b.rect = r
-	p.Fill(r, b.wood, boardRadius)
+	p.Shadow(r, boardRadius, 0, 10, 30, 0, mygo.RGB(90, 66, 40).Alpha(0.18))
+	p.FillGradient(r, mygo.LinearGradient{
+		Stops: []mygo.GradientStop{{Color: b.surfaceTop, At: 0}, {Color: b.surfaceLow, At: 1}},
+		Angle: 178,
+	}, boardRadius)
 	p.Stroke(r, b.edge, boardRadius, 1)
+	p.Stroke(mygo.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: r.H - 2},
+		mygo.RGB(255, 255, 255).Alpha(0.22), boardRadius-1, 1)
 
 	first := r.X + geo.OriginX
 	top := r.Y + geo.OriginY
@@ -244,6 +256,7 @@ func (b *BoardView) paintLastMove(p *mygo.Painter, r mygo.Rect, geo geometry, ro
 	cx := r.X + geo.OriginX + float32(col)*geo.Cell
 	cy := r.Y + geo.OriginY + float32(row)*geo.Cell
 	radius := geo.Cell * 0.16
+	p.FillPath((&mygo.Path{}).Circle(cx, cy, radius*1.7), mygo.RGB(255, 255, 255).Alpha(0.75))
 	p.FillPath((&mygo.Path{}).Circle(cx, cy, radius), b.accent)
 }
 
@@ -264,7 +277,7 @@ func (b *BoardView) paintStone(p *mygo.Painter, r mygo.Rect, geo geometry, row, 
 		return
 	}
 	shadow := mygo.Rect{X: cx - radius, Y: cy - radius + shadowOffset, W: radius * 2, H: radius * 2}
-	p.Fill(shadow, mygo.RGB(120, 90, 50).Alpha(0.35), radius)
+	p.Fill(shadow, mygo.RGB(74, 55, 32).Alpha(0.30), radius)
 	p.Clip(shadow, radius, func() {
 		p.FillRadialGradient(shadow, mygo.RadialGradient{
 			Stops:  []mygo.GradientStop{{Color: light, At: 0}, {Color: dark, At: 1}},
@@ -272,14 +285,8 @@ func (b *BoardView) paintStone(p *mygo.Painter, r mygo.Rect, geo geometry, row, 
 			Radius: radius * 1.6,
 		}, radius)
 	})
+	box := mygo.Rect{X: cx - radius, Y: cy - radius, W: radius * 2, H: radius * 2}
 	if cell == 2 {
-		p.Stroke(mygo.Rect{X: cx - radius, Y: cy - radius, W: radius * 2, H: radius * 2}, mygo.RGB(170, 170, 178), radius, 1)
+		p.Stroke(box, mygo.RGB(190, 178, 158), radius, 1)
 	}
-}
-
-func stoneColor(player gomoku.Player) mygo.Color {
-	if player == gomoku.PlayerBlack {
-		return mygo.RGB(16, 16, 20)
-	}
-	return mygo.RGB(240, 240, 244)
 }
