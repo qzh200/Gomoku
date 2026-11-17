@@ -450,7 +450,7 @@ class SearchTests(unittest.TestCase):
         searcher = MCTS(model, DEVICE)
         searcher._expand(root, np.full(ACTION_COUNT, 1.0 / ACTION_COUNT, dtype=np.float32))
         self.assertEqual(root.children[cell_of(7, 8)].terminal_value, -1.0)
-        self.assertIsNone(root.children[cell_of(0, 0)].terminal_value)
+        self.assertEqual(set(root.children), {cell_of(7, 3), cell_of(7, 8)})
 
     def test_the_last_empty_cell_is_a_draw(self) -> None:
         grid = [[0] * BOARD_SIZE for _ in range(BOARD_SIZE)]
@@ -517,16 +517,14 @@ class SelfPlayTests(unittest.TestCase):
 
 
 class ScheduleTests(unittest.TestCase):
-    def test_the_learning_rate_decays_three_times(self) -> None:
+    def test_the_learning_rate_keeps_learning_until_late_training(self) -> None:
         total = 25_000
         self.assertAlmostEqual(learning_rate(0, total), 0.0125)
-        self.assertAlmostEqual(learning_rate(3_570, total), 0.0125)
-        self.assertAlmostEqual(learning_rate(3_571, total), 0.00125)
-        self.assertAlmostEqual(learning_rate(10_713, total), 0.00125)
-        self.assertAlmostEqual(learning_rate(10_714, total), 0.000125)
-        self.assertAlmostEqual(learning_rate(17_856, total), 0.000125)
-        self.assertAlmostEqual(learning_rate(17_857, total), 0.0000125)
-        self.assertAlmostEqual(learning_rate(24_999, total), 0.0000125)
+        self.assertAlmostEqual(learning_rate(14_999, total), 0.0125)
+        self.assertAlmostEqual(learning_rate(15_000, total), 0.00125)
+        self.assertAlmostEqual(learning_rate(21_249, total), 0.00125)
+        self.assertAlmostEqual(learning_rate(21_250, total), 0.000125)
+        self.assertAlmostEqual(learning_rate(24_999, total), 0.000125)
 
     def test_the_simulations_ramp_in_thirds(self) -> None:
         total = 25_000
@@ -589,8 +587,9 @@ class WorkerPlanTests(unittest.TestCase):
         self.assertEqual(plan_workers("auto", None, 4), 2)
 
     def test_auto_games_keep_the_pool_busy(self) -> None:
-        self.assertEqual(plan_games("auto", 13), 13)
-        self.assertEqual(plan_games("auto", 4), 10)
+        self.assertEqual(plan_games("auto", 13), 32)
+        self.assertEqual(plan_games("auto", 4), 32)
+        self.assertEqual(plan_games("auto", 40), 40)
         self.assertEqual(plan_games("7", 13), 7)
 
 

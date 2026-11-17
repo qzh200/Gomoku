@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from .board import BOARD_SIZE
+from .tactics import immediate_moves
 from .threats import (
     STRIDE,
     board_masks,
@@ -130,14 +131,17 @@ class Solver:
         fours = open_four_mask(own, empty)
         if not fours:
             return False
-        if _count(fours) == 1:
-            return self._reply(own, other, empty, fours, depth, mode)
-        for reply in bits(fours):
+        # Blocking a gap is not the only answer to a broken three: occupying
+        # an outer endpoint can also prevent its open four. Counter-checks
+        # must be considered as well, even when they are on another line.
+        for reply in bits(empty):
             self._tick()
             bit = 1 << reply
-            if five_mask(other, empty) & bit:
-                return False
-            if not self._attack(own, other | bit, empty & ~bit, depth - 1, mode):
+            remaining = empty & ~bit
+            counter_check = five_mask(other | bit, remaining)
+            if not counter_check and open_four_mask(own, remaining):
+                continue
+            if not self._attack(own, other | bit, remaining, depth - 1, mode):
                 return False
         return True
 
@@ -217,10 +221,10 @@ class PlaySolver:
         self.max_nodes = max_nodes
 
     def move(self, board, player: int) -> tuple[int, int] | None:
+        forced = immediate_moves(board, player)
+        if forced:
+            return forced[0]
         own, _, empty = board_masks(board, player)
-        immediate = five_mask(own, empty)
-        if immediate:
-            return divmod(immediate.bit_length() - 1, STRIDE)
         if self.vcf_budget > 0:
             move = winning_move(
                 board, player, self.vcf_budget, VCF, self.max_depth, self.max_nodes

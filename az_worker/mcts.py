@@ -9,7 +9,8 @@ import numpy as np
 from .board import BOARD_SIZE, Board, other
 from .features import encode, legal_mask
 from .network import ACTION_COUNT, evaluate
-from .threats import STRIDE, board_masks, five_mask
+from .tactics import search_moves
+from .threats import STRIDE
 
 
 C_BASE = 19652.0
@@ -256,21 +257,20 @@ class MCTS:
         if not moves:
             node.terminal_value = 0.0
             return
-        cells = [cell_of(row, col) for row, col in moves]
-        priors = [float(policy[cell]) for cell in cells]
-        total = sum(priors)
-        if total <= 0:
-            priors = [1.0 / len(moves)] * len(moves)
-        else:
-            priors = [prior / total for prior in priors]
-        own, _, empty = board_masks(board, node.player)
-        wins = five_mask(own, empty)
+        moves, priors, wins, checks, fours = search_moves(board, node.player, moves, policy)
         terminal = len(empty_cells) == 1
         for (row, col), prior in zip(moves, priors):
             child = Node(None, other(node.player), parent=node, move=(row, col))
             child.prior = prior
             child.last_move = (row, col)
             if wins & (1 << (row * STRIDE + col)):
+                child.terminal_value = -1.0
+            elif checks & ~(1 << (row * STRIDE + col)):
+                # An unblocked immediate win is a proven win for the child.
+                child.terminal_value = 1.0
+            elif fours & (1 << (row * STRIDE + col)):
+                # A live four has two distinct winning replies; with no enemy
+                # immediate win left, the opponent cannot stop both.
                 child.terminal_value = -1.0
             elif terminal:
                 child.terminal_value = 0.0

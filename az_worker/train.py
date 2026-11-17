@@ -27,9 +27,9 @@ from .vcf import PlaySolver
 
 TOTAL_STEPS = 25_000
 
-ITERATIONS = 100
+ITERATIONS = 1_000
 
-GAMES_PER_ITERATION = 10
+GAMES_PER_ITERATION = 32
 
 BATCH_SIZE = 256
 
@@ -41,21 +41,21 @@ WEIGHT_DECAY = 1e-4
 
 BUFFER_CAPACITY = 100_000
 
-CHANNELS = 128
+CHANNELS = 64
 
-BLOCKS = 10
+BLOCKS = 6
 
 VALUE_HIDDEN = 64
 
 SEARCH_BATCH = 32
 
-CANDIDATE_RADIUS = 0
+CANDIDATE_RADIUS = 2
 
 SIMULATIONS_SCHEDULE = (400, 800, 1600)
 
 SIMULATIONS_FRACTIONS = (1.0 / 3.0, 2.0 / 3.0)
 
-DECAY_FRACTIONS = (1.0 / 7.0, 3.0 / 7.0, 5.0 / 7.0)
+DECAY_FRACTIONS = (0.6, 0.85)
 
 DEFAULT_MODEL_PATH = "models/az/current.pt"
 
@@ -169,7 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--games",
         default="auto",
-        help="每轮自对弈局数：auto 取进程数（池不空转）与 10 的较大者",
+        help="每轮自对弈局数：auto 取进程数与 32 的较大者",
     )
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE, help="批次大小")
     parser.add_argument("--lr", type=float, default=LEARNING_RATE, help="初始学习率")
@@ -203,7 +203,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--temperature-moves", type=int, default=TEMPERATURE_MOVES, help="前多少手用温度采样"
     )
-    parser.add_argument("--augment", action="store_true", help="开启八对称数据增强（默认关闭）")
+    parser.add_argument(
+        "--augment", action=argparse.BooleanOptionalAction, default=True,
+        help="八对称数据增强（默认开启，--no-augment 关闭）",
+    )
     parser.add_argument(
         "--selfplay-vcf",
         type=float,
@@ -241,11 +244,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--eval-every",
         type=int,
-        default=20,
+        default=50,
         help="每隔多少轮跟传统引擎打几局做棋力探针，0 关闭",
     )
-    parser.add_argument("--eval-games", type=int, default=4, help="探针局数")
-    parser.add_argument("--eval-simulations", type=int, default=128, help="探针每手模拟数")
+    parser.add_argument("--eval-games", type=int, default=8, help="探针局数")
+    parser.add_argument("--eval-simulations", type=int, default=512, help="探针每手模拟数")
     parser.add_argument("--eval-vcf", type=float, default=0.1, help="探针每手 VCF 预算")
     parser.add_argument("--eval-vct", type=float, default=0.1, help="探针每手 VCT 预算")
     parser.add_argument("--eval-classical-depth", type=int, default=2, help="探针对手深度")
@@ -506,6 +509,8 @@ def main(argv: list[str] | None = None) -> int:
                 "games": games_done,
                 "lr": learning_rate(step, args.total_steps, args.lr),
                 "simulations": simulations,
+                "training_version": 2,
+                "config": vars(args).copy(),
             },
             {"optimizer": optimizer.state_dict()},
         )

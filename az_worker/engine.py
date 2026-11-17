@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 
-from .board import Board, other
+from .board import Board
 from .config import (
     DEFAULT_CANDIDATE_RADIUS,
     DEFAULT_MODEL_PATH,
@@ -17,6 +17,7 @@ from .config import (
 )
 from .mcts import MCTS, row_col_of
 from .network import GomokuNet, load_model
+from .tactics import immediate_moves
 from .vcf import VCF, VCT, winning_move
 
 
@@ -162,11 +163,5 @@ class AlphaZeroEngine:
 
     @staticmethod
     def _forced_move(position: Board, player: int) -> tuple[int, int] | None:
-        cells = position.empty_cells()
-        for cell in cells:
-            if position.wins_with(cell[0], cell[1], player):
-                return cell
-        for cell in cells:
-            if position.wins_with(cell[0], cell[1], other(player)):
-                return cell
-        return None
+        moves = immediate_moves(position, player)
+        return moves[0] if moves else None
