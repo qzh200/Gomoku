@@ -92,19 +92,22 @@ def four_makers(
 
 
 class Threats(NamedTuple):
-    """一方的成五点、活四点、冲四点。有成五点就不必再看四。"""
+    """一方的成五点、活四点、冲四点、双活三点。越靠前越强。"""
 
     fives: list[tuple[int, int]]
     open_fours: list[tuple[int, int]]
     fours: list[tuple[int, int]]
+    doubles: list[tuple[int, int]]
 
 
 def threats(board_state: list[list[int]], player: int) -> Threats:
     fives = five_points(board_state, player)
     if fives:
-        return Threats(fives, [], [])
+        return Threats(fives, [], [], [])
     open_fours, fours = four_makers(board_state, player)
-    return Threats([], open_fours, fours)
+    if open_fours:
+        return Threats([], open_fours, fours, [])
+    return Threats([], [], fours, double_threes(board_state, player))
 
 
 def describe_threats(board_state: list[list[int]], player: int) -> list[str]:
@@ -127,11 +130,55 @@ def describe(found: Threats, player: int) -> list[str]:
         lines.append(
             f"{name}下在 {spots(found.open_fours)} 就成活四：之后有两个成五点，挡不住。"
         )
+    if found.doubles:
+        lines.append(
+            f"{name}下在 {spots(found.doubles)} 会同时做出两个活三：对手只能挡一边，"
+            "另一边下一手就成活四。"
+        )
     if found.fours:
         lines.append(
             f"{name}下在 {spots(found.fours, limit=4)} 就成冲四：只有一个成五点，对手必须去堵。"
         )
     return lines
+
+
+def double_threes(board_state: list[list[int]], player: int) -> list[tuple[int, int]]:
+    """落子后同时有两个以上活四点：双活三，对手挡不住。"""
+    found: list[tuple[int, int]] = []
+    for row, col in _candidates(board_state):
+        board_state[row][col] = player
+        try:
+            if _new_five_points(board_state, player, row, col):
+                continue
+            makers = _open_four_makers_near(board_state, player, row, col)
+        finally:
+            board_state[row][col] = 0
+        if len(makers) >= 2:
+            found.append((row, col))
+    return found
+
+
+def _open_four_makers_near(
+    board_state: list[list[int]], player: int, row: int, col: int
+) -> list[tuple[int, int]]:
+    """刚落下的这一子造出哪些活四点。活四点必然和这一子在同一线上。"""
+    found: list[tuple[int, int]] = []
+    for dr, dc in DIRECTIONS:
+        for step in range(1, 5):
+            for sign in (-1, 1):
+                r, c = row + dr * step * sign, col + dc * step * sign
+                if not in_bounds(r, c) or board_state[r][c] != 0:
+                    continue
+                if (r, c) in found:
+                    continue
+                board_state[r][c] = player
+                try:
+                    gained = _new_five_points(board_state, player, r, c)
+                finally:
+                    board_state[r][c] = 0
+                if len(gained) >= 2:
+                    found.append((r, c))
+    return found
 
 
 def spots(cells: list[tuple[int, int]], limit: int | None = None) -> str:
