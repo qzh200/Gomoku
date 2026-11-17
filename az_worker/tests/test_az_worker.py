@@ -41,7 +41,12 @@ from az_worker.selfplay import (
     worker_play,
 )
 from az_worker.threats import board_masks, five_mask, open_three_mask, threat_masks
-from az_worker.train import learning_rate, simulations_for
+from az_worker.train import (
+    learning_rate,
+    plan_games,
+    plan_workers,
+    simulations_for,
+)
 from az_worker.vcf import VCF, VCT, Solver, winning_move
 
 
@@ -504,6 +509,66 @@ class ParallelSelfPlayTests(unittest.TestCase):
             self.assertGreater(game.moves, 0)
             for example in game.examples:
                 self.assertAlmostEqual(float(example.policy.sum()), 1.0, places=5)
+
+
+class WorkerPlanTests(unittest.TestCase):
+    def test_a_fixed_count_is_kept(self) -> None:
+        self.assertEqual(plan_workers("4", 8 * 1024**3, 32), 4)
+        self.assertEqual(plan_workers(1, None, 32), 1)
+
+    def test_auto_fits_the_free_vram(self) -> None:
+        self.assertEqual(plan_workers("auto", 4 * 1024**3, 32), 13)
+
+    def test_auto_never_exceeds_half_the_cores(self) -> None:
+        self.assertEqual(plan_workers("auto", 64 * 1024**3, 8), 4)
+
+    def test_auto_without_a_gpu_uses_eight_cpu_workers(self) -> None:
+        self.assertEqual(plan_workers("auto", None, 32), 8)
+        self.assertEqual(plan_workers("auto", None, 4), 2)
+
+    def test_auto_games_keep_the_pool_busy(self) -> None:
+        self.assertEqual(plan_games("auto", 13), 13)
+        self.assertEqual(plan_games("auto", 4), 10)
+        self.assertEqual(plan_games("7", 13), 7)
+
+
+class SharedInferenceTests(unittest.TestCase):
+    def test_a_worker_plays_through_the_inference_server(self) -> None:
+        import multiprocessing as mp
+        import threading
+
+        from az_worker.inference import RemoteEvaluator, serve
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "model.pt")
+            save(small_model(), path)
+            requests: mp.Queue = mp.Queue()
+            stop = threading.Event()
+            thread = threading.Thread(
+                target=serve,
+                args=(requests, "cpu", path, stop),
+                kwargs={"max_batch": 8, "window": 0.001},
+                daemon=True,
+            )
+            thread.start()
+            parent, child = mp.Pipe()
+            requests.put(parent)
+            evaluator = RemoteEvaluator(child, timeout=30.0)
+            player = SelfPlay(
+                None,
+                torch.device("cpu"),
+                simulations=4,
+                batch_size=4,
+                seed=1,
+                evaluator=evaluator,
+            )
+            game = player.play_game()
+            stop.set()
+            thread.join(5.0)
+        self.assertGreater(game.moves, 0)
+        for example in game.examples:
+            self.assertAlmostEqual(float(example.policy.sum()), 1.0, places=5)
+        self.assertTrue(stop.is_set())
 
 
 class DatasetTests(unittest.TestCase):
