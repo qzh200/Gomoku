@@ -57,17 +57,12 @@ func (a *App) build(c *mygo.Context) {
 
 func (a *App) buildToolbar(c *mygo.Context, tk *theme.Tokens) {
 	mygo.Row(c).Height(toolbarHeight).Padding(0, pagePadding).Gap(10).AlignItems(mygo.Center).Children(func() {
-		a.buildToolbarTitle(c)
 		mygo.Spacer(c).Grow(1).Basis(0)
 		a.buildThinking(c)
 		a.buildStatus(c, tk)
 	})
 }
 
-func (a *App) buildToolbarTitle(c *mygo.Context) {
-	display.Icon(c, lucide.Grid3x3(), display.IconProps{Size: display.IconMiddle})
-	display.Text(c, "五子棋", display.TextProps{Heading: 4})
-}
 func (a *App) buildThinking(c *mygo.Context) {
 	a.mu.Lock()
 	thinking := !a.st.reviewing && a.st.game != nil && a.st.game.AIThinking
