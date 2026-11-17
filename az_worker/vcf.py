@@ -10,6 +10,7 @@ from .threats import (
     five_mask,
     near_mask,
     open_four_mask,
+    open_three_mask,
 )
 
 
@@ -200,3 +201,36 @@ def winning_move(
     if not (0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE):
         return None
     return row, col
+
+
+class PlaySolver:
+    def __init__(
+        self,
+        vcf_budget: float = 0.05,
+        vct_budget: float = 0.05,
+        max_depth: int = DEFAULT_DEPTH,
+        max_nodes: int = DEFAULT_NODES,
+    ) -> None:
+        self.vcf_budget = max(0.0, vcf_budget)
+        self.vct_budget = max(0.0, vct_budget)
+        self.max_depth = max_depth
+        self.max_nodes = max_nodes
+
+    def move(self, board, player: int) -> tuple[int, int] | None:
+        own, _, empty = board_masks(board, player)
+        immediate = five_mask(own, empty)
+        if immediate:
+            return divmod(immediate.bit_length() - 1, STRIDE)
+        if self.vcf_budget > 0:
+            move = winning_move(
+                board, player, self.vcf_budget, VCF, self.max_depth, self.max_nodes
+            )
+            if move is not None:
+                return move
+        if self.vct_budget > 0:
+            if not (open_four_mask(own, empty) or open_three_mask(own, empty)):
+                return None
+            return winning_move(
+                board, player, self.vct_budget, VCT, self.max_depth, self.max_nodes
+            )
+        return None

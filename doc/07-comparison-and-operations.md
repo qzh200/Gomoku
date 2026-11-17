@@ -252,6 +252,10 @@ python -m unittest discover -s llm_worker/tests -t .
 约占全程 3–5%；`--eval-every 0` 关闭。检查点内含优化器动量与 `step`/`iteration`/`games`，
 续训后曲线连续。
 
+自对弈默认也带解算器（`--selfplay-vcf 0.05 --selfplay-vct 0.05`）：命中强制胜的那一手
+跳过 MCTS、策略目标记 one-hot；实测整轮耗时基本不变，对局变短。`--selfplay-vcf 0
+--selfplay-vct 0` 回到纯 MCTS 选点。
+
 自对弈是单核 Python，梯度步阶段 GPU 才满载；`--search-batch` 与线程数不是吞吐参数，
 并行进程才是。每个 CUDA 进程约 230 MB 显存上下文，8 GB 卡在桌面占用约 4 GB 时最多
 13 个进程，再多会被系统终止。

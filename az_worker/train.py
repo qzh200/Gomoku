@@ -22,6 +22,7 @@ from .selfplay import (
     worker_init,
     worker_play,
 )
+from .vcf import PlaySolver
 
 
 TOTAL_STEPS = 25_000
@@ -193,6 +194,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--temperature-moves", type=int, default=TEMPERATURE_MOVES, help="前多少手用温度采样"
     )
     parser.add_argument("--augment", action="store_true", help="开启八对称数据增强（默认关闭）")
+    parser.add_argument(
+        "--selfplay-vcf",
+        type=float,
+        default=0.05,
+        help="自对弈每手 VCF 预算，0 关闭；命中强制胜时该手直接用解算器落子",
+    )
+    parser.add_argument(
+        "--selfplay-vct",
+        type=float,
+        default=0.05,
+        help="自对弈每手 VCT 预算，0 关闭；只在有活三/活四/成五点时搜索",
+    )
+    parser.add_argument("--selfplay-solver-depth", type=int, default=10)
+    parser.add_argument("--selfplay-solver-nodes", type=int, default=4000)
     parser.add_argument("--device", default="auto", help="auto、cpu、cuda 或 cuda:0")
     parser.add_argument("--model", default=DEFAULT_MODEL_PATH, help="权重输出路径")
     parser.add_argument(
@@ -310,11 +325,27 @@ def main(argv: list[str] | None = None) -> int:
     else:
         workers = plan_workers(args.workers, free_bytes, os.cpu_count() or 1)
     games = plan_games(args.games, workers)
+    solver_args = None
+    if args.selfplay_vcf > 0 or args.selfplay_vct > 0:
+        solver_args = (
+            args.selfplay_vcf,
+            args.selfplay_vct,
+            args.selfplay_solver_depth,
+            args.selfplay_solver_nodes,
+        )
     print(
         f"设备 {device}，参数 {parameters}，总步数 {args.total_steps}，"
         f"每轮 {steps_per_iteration} 步，轮数 {args.iterations}，每轮 {games} 局",
         flush=True,
     )
+    if solver_args:
+        print(
+            f"自对弈解算器: VCF {solver_args[0]}s / VCT {solver_args[1]}s"
+            f"（深度 {solver_args[2]}，节点 {solver_args[3]}）",
+            flush=True,
+        )
+    else:
+        print("自对弈解算器: 关闭（纯 MCTS 选点）", flush=True)
     if log_path:
         print(f"训练记录: {log_path}", flush=True)
     writer = None
@@ -346,7 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         pool = ProcessPoolExecutor(
             max_workers=workers,
             initializer=worker_init,
-            initargs=(worker_device, args.temperature_moves, requests),
+            initargs=(worker_device, args.temperature_moves, requests, solver_args),
         )
         extra = "" if free_bytes is None else f"，空闲显存 {free_bytes / 2**20:.0f} MiB"
         print(
@@ -395,6 +426,7 @@ def main(argv: list[str] | None = None) -> int:
                 batch_size=args.search_batch,
                 temperature_moves=args.temperature_moves,
                 seed=rng.randrange(1 << 30),
+                solver=PlaySolver(*solver_args) if solver_args else None,
             )
             games_played = [player.play_game() for _ in range(games)]
         wins = {1: 0, 2: 0, None: 0}

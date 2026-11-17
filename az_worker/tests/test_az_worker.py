@@ -284,6 +284,45 @@ class ThreatBitboardTests(unittest.TestCase):
         self.assertTrue(open_three_mask(own, empty))
 
 
+class SelfPlaySolverTests(unittest.TestCase):
+    def test_the_solver_seats_a_forced_win(self) -> None:
+        from az_worker.vcf import PlaySolver
+
+        solver = PlaySolver(vcf_budget=0.1, vct_budget=0.0)
+        position = Board(
+            board_of(
+                [
+                    (7, 5, BLACK),
+                    (7, 6, BLACK),
+                    (7, 7, BLACK),
+                    (6, 6, WHITE),
+                    (8, 8, WHITE),
+                ]
+            )
+        )
+        self.assertIn(solver.move(position, BLACK), {(7, 4), (7, 8)})
+
+    def test_selfplay_uses_one_hot_targets_on_solver_plies(self) -> None:
+        class FirstEmpty:
+            def move(self, board, player):
+                return board.empty_cells()[0]
+
+        player = SelfPlay(
+            small_model(), DEVICE, simulations=2, batch_size=2, seed=1, solver=FirstEmpty()
+        )
+        game = player.play_game()
+        self.assertGreater(game.moves, 0)
+        for example in game.examples:
+            self.assertAlmostEqual(float(example.policy.sum()), 1.0, places=6)
+            self.assertEqual(int((example.policy > 0).sum()), 1)
+
+    def test_selfplay_without_a_solver_keeps_the_visit_target(self) -> None:
+        player = SelfPlay(small_model(), DEVICE, simulations=4, batch_size=2, seed=1)
+        game = player.play_game()
+        visited = [int((example.policy > 0).sum()) for example in game.examples]
+        self.assertGreater(max(visited), 1)
+
+
 class PuctTests(unittest.TestCase):
     def test_the_exploration_constant_grows_with_visits(self) -> None:
         low = math.log((1 + 0 + C_BASE) / C_BASE) + C_INIT

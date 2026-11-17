@@ -11,8 +11,8 @@ import torch
 from .board import BLACK, Board, other
 from .features import encode, legal_mask
 from .inference import RemoteEvaluator
-from .mcts import MCTS, row_col_of
-from .network import GomokuNet, load_model, save
+from .mcts import MCTS, cell_of, row_col_of
+from .network import ACTION_COUNT, GomokuNet, load_model, save
 
 
 TEMPERATURE_MOVES = 12
@@ -49,9 +49,11 @@ class SelfPlay:
         time_budget: float | None = None,
         seed: int | None = None,
         evaluator=None,
+        solver=None,
     ) -> None:
         self.simulations = simulations
         self.temperature_moves = temperature_moves
+        self.solver = solver
         self.rng = random.Random(seed)
         self.searcher = MCTS(
             model,
@@ -73,22 +75,33 @@ class SelfPlay:
         winner: int | None = None
 
         while not board.is_full():
-            temperature = 1.0 if len(examples) < self.temperature_moves else 0.0
-            result = self.searcher.search(
-                board,
-                player,
-                simulations=self.simulations,
-                add_noise=True,
-                last_move=last_move,
-            )
-            move = result.sampled_move(temperature, self.rng)
+            move = None
+            policy = None
+            if self.solver is not None:
+                forced = self.solver.move(board, player)
+                if forced is not None:
+                    row, col = forced
+                    move = cell_of(row, col)
+                    policy = np.zeros(ACTION_COUNT, dtype=np.float32)
+                    policy[move] = 1.0
+            if move is None:
+                temperature = 1.0 if len(examples) < self.temperature_moves else 0.0
+                result = self.searcher.search(
+                    board,
+                    player,
+                    simulations=self.simulations,
+                    add_noise=True,
+                    last_move=last_move,
+                )
+                move = result.sampled_move(temperature, self.rng)
+                policy = result.policy
             if move is None:
                 break
             row, col = row_col_of(move)
             examples.append(
                 Example(
                     planes=encode(board, player, last_move),
-                    policy=result.policy,
+                    policy=policy,
                     legal=legal_mask(board),
                 )
             )
@@ -123,12 +136,14 @@ def worker_init(
     device: str,
     temperature_moves: int = TEMPERATURE_MOVES,
     requests=None,
+    solver_args=None,
 ) -> None:
     torch.set_num_threads(1)
     _WORKER.clear()
     _WORKER["temperature_moves"] = temperature_moves
     _WORKER["models"] = {}
     _WORKER["evaluator"] = None
+    _WORKER["solver"] = _make_solver(solver_args)
     if device == "shared":
         if requests is None:
             raise RuntimeError("共享推理模式缺少请求队列")
@@ -138,6 +153,14 @@ def worker_init(
         _WORKER["evaluator"] = RemoteEvaluator(child)
     else:
         _WORKER["device"] = torch.device(device)
+
+
+def _make_solver(solver_args):
+    if not solver_args:
+        return None
+    from .vcf import PlaySolver
+
+    return PlaySolver(*solver_args)
 
 
 def checkpoint_stamp(path: str | Path) -> int:
@@ -165,5 +188,6 @@ def worker_play(task: tuple[str, int, int, int, int]) -> GameResult:
         temperature_moves=_WORKER["temperature_moves"],
         seed=seed,
         evaluator=evaluator,
+        solver=_WORKER.get("solver"),
     )
     return player.play_game()
