@@ -208,27 +208,27 @@ python -m unittest discover -s llm_worker/tests -t .
 
 ### 5.5 AlphaZero 训练
 
-纯自对弈，无教师、无晋级门槛，方法见 `doc/05-az-engine.md` §2 与 §8：
+纯自对弈，无教师、无晋级门槛，方法见 `doc/05-az-engine.md` §2 与 §8。进程数与每轮局数
+都由默认的 `auto` 按空闲显存和 CPU 核数推导（这台机器上是 13 个进程、13 局/轮）：
 
 ```sh
-# 从随机网络起训（默认 25,000 步 / 100 轮 / 每轮 10 局）
+# 从随机网络起训（默认 25,000 步 / 100 轮）
 .venv/Scripts/python.exe -m az_worker.train \
-  --total-steps 25000 --iterations 100 --games 10 --device cuda \
-  --workers 4 --worker-device cuda \
+  --total-steps 25000 --iterations 100 --device cuda \
   --model models/az/current.pt --buffer-file models/az/replay.pt --seed 1
 
 # 中断后续训：权重、回放池、已完成步数一起恢复
 .venv/Scripts/python.exe -m az_worker.train \
-  --total-steps 25000 --iterations 100 --games 10 --device cuda \
-  --workers 4 --worker-device cuda \
+  --total-steps 25000 --iterations 100 --device cuda \
   --model models/az/current.pt --init models/az/current.pt \
   --buffer-file models/az/replay.pt --resume
 ```
 
-整套默认预算在 RTX 4060 Laptop 上：单进程约 4.4 小时，4 个 CUDA 自对弈进程约 1.5 小时
-（每轮 10 局在 128/256/400 模拟下分别 30/53/75 秒，梯度步 250 步约 5 秒）。自对弈是
-单核 Python，梯度步阶段 GPU 才满载；`--search-batch` 与线程数不是吞吐参数，并行进程才是。
-显存按每进程 250–360 MB 预留，8 GB 卡用 4 个进程留有余量。
+整套默认预算在 RTX 4060 Laptop 上约 **1 小时**（13 个 CUDA 自对弈进程，GPU 平均 47.5%、
+峰值 96%，显存 6.9 GB）；单进程约 4.5 小时。自对弈是单核 Python，梯度步阶段 GPU 才
+满载；`--search-batch` 与线程数不是吞吐参数，并行进程才是。每个 CUDA 进程约 230 MB
+显存上下文，8 GB 卡在桌面占用约 4 GB 时最多 13 个进程，再多会被系统终止；显存吃紧
+时可用 `--worker-device shared` 让所有进程共用一个 GPU 推理服务。
 
 要提高棋力，增加 `--total-steps`、`--games`、`--iterations`，方法与代码不用改。训练会
 占满显存，建议与 Worker 分开运行。

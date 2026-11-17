@@ -9,6 +9,7 @@ import numpy as np
 from .board import BOARD_SIZE, Board, other
 from .features import encode, legal_mask
 from .network import ACTION_COUNT, evaluate
+from .threats import STRIDE, board_masks, five_mask
 
 
 C_BASE = 19652.0
@@ -147,9 +148,11 @@ class MCTS:
         batch_size: int = 32,
         time_budget: float | None = None,
         seed: int | None = None,
+        evaluator=None,
     ) -> None:
         self.model = model
         self.device = device
+        self.evaluator = evaluator
         self.c_base = c_base
         self.c_init = c_init
         self.dirichlet_alpha = dirichlet_alpha
@@ -215,8 +218,13 @@ class MCTS:
         for node in nodes:
             planes.append(encode(node.board, node.player, node.last_move))
             masks.append(legal_mask(node.board))
-        policies, _ = evaluate(self.model, np.stack(planes), np.stack(masks), self.device)
+        policies, _ = self._forward(np.stack(planes), np.stack(masks))
         return policies
+
+    def _forward(self, planes: np.ndarray, masks: np.ndarray):
+        if self.evaluator is not None:
+            return self.evaluator(planes, masks)
+        return evaluate(self.model, planes, masks, self.device)
 
     def _flush(self, pending: list[tuple[Node, list[Node]]]) -> None:
         if not pending:
@@ -226,9 +234,7 @@ class MCTS:
         for leaf, _ in pending:
             planes.append(encode(leaf.board, leaf.player, leaf.last_move))
             masks.append(legal_mask(leaf.board))
-        policies, values = evaluate(
-            self.model, np.stack(planes), np.stack(masks), self.device
-        )
+        policies, values = self._forward(np.stack(planes), np.stack(masks))
         for (leaf, path), policy, value in zip(pending, policies, values):
             self._expand(leaf, policy)
             self._backpropagate(path, float(value))
@@ -236,7 +242,8 @@ class MCTS:
 
     def _expand(self, node: Node, policy: np.ndarray) -> None:
         node.expanded = True
-        moves = node.board.empty_cells()
+        board = node.board
+        moves = board.empty_cells()
         if not moves:
             node.terminal_value = 0.0
             return
@@ -247,13 +254,14 @@ class MCTS:
             priors = [1.0 / len(moves)] * len(moves)
         else:
             priors = [prior / total for prior in priors]
+        own, _, empty = board_masks(board, node.player)
+        wins = five_mask(own, empty)
         terminal = len(moves) == 1
         for (row, col), prior in zip(moves, priors):
-            won = node.board.wins_with(row, col, node.player)
             child = Node(None, other(node.player), parent=node, move=(row, col))
             child.prior = prior
             child.last_move = (row, col)
-            if won:
+            if wins & (1 << (row * STRIDE + col)):
                 child.terminal_value = -1.0
             elif terminal:
                 child.terminal_value = 0.0

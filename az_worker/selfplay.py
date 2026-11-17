@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from multiprocessing import Pipe
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,7 @@ import torch
 
 from .board import BLACK, Board, other
 from .features import encode, legal_mask
+from .inference import RemoteEvaluator
 from .mcts import MCTS, row_col_of
 from .network import GomokuNet, load_model, save
 
@@ -46,6 +48,7 @@ class SelfPlay:
         noise_weight: float = 0.25,
         time_budget: float | None = None,
         seed: int | None = None,
+        evaluator=None,
     ) -> None:
         self.simulations = simulations
         self.temperature_moves = temperature_moves
@@ -58,6 +61,7 @@ class SelfPlay:
             batch_size=batch_size,
             time_budget=time_budget,
             seed=seed,
+            evaluator=evaluator,
         )
 
     def play_game(self) -> GameResult:
@@ -110,11 +114,25 @@ def save_checkpoint(model: GomokuNet, path: str | Path, meta: dict | None = None
     save(model, str(target), meta)
 
 
-def worker_init(device: str, temperature_moves: int = TEMPERATURE_MOVES) -> None:
+def worker_init(
+    device: str,
+    temperature_moves: int = TEMPERATURE_MOVES,
+    requests=None,
+) -> None:
     torch.set_num_threads(1)
     _WORKER.clear()
-    _WORKER["device"] = torch.device(device)
     _WORKER["temperature_moves"] = temperature_moves
+    _WORKER["models"] = {}
+    _WORKER["evaluator"] = None
+    if device == "shared":
+        if requests is None:
+            raise RuntimeError("共享推理模式缺少请求队列")
+        parent, child = Pipe()
+        requests.put(parent)
+        _WORKER["device"] = torch.device("cpu")
+        _WORKER["evaluator"] = RemoteEvaluator(child)
+    else:
+        _WORKER["device"] = torch.device(device)
 
 
 def checkpoint_stamp(path: str | Path) -> int:
@@ -123,18 +141,24 @@ def checkpoint_stamp(path: str | Path) -> int:
 
 def worker_play(task: tuple[str, int, int, int, int]) -> GameResult:
     model_path, stamp, simulations, batch_size, seed = task
-    if _WORKER.get("path") != model_path or _WORKER.get("stamp") != stamp:
-        model = load_model(model_path, _WORKER["device"])
-        model.eval()
-        _WORKER["path"] = model_path
-        _WORKER["stamp"] = stamp
-        _WORKER["model"] = model
+    evaluator = _WORKER.get("evaluator")
+    model = None
+    if evaluator is None:
+        cache = _WORKER["models"]
+        entry = cache.get("model")
+        if entry is None or entry[0] != model_path or entry[1] != stamp:
+            model = load_model(model_path, _WORKER["device"])
+            model.eval()
+            cache["model"] = (model_path, stamp, model)
+        else:
+            model = entry[2]
     player = SelfPlay(
-        _WORKER["model"],
+        model,
         _WORKER["device"],
         simulations=simulations,
         batch_size=batch_size,
         temperature_moves=_WORKER["temperature_moves"],
         seed=seed,
+        evaluator=evaluator,
     )
     return player.play_game()
