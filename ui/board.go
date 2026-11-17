@@ -46,8 +46,7 @@ type BoardView struct {
 
 	OnPick func(row, col int)
 
-	woodTop  mygo.Color
-	woodLow  mygo.Color
+	wood     mygo.Color
 	line     mygo.Color
 	black    mygo.Color
 	blackTop mygo.Color
@@ -68,9 +67,8 @@ func newBoardView() *BoardView {
 }
 
 func (b *BoardView) applyTheme(tk *theme.Tokens) {
-	b.woodTop = mygo.RGB(241, 220, 186)
-	b.woodLow = mygo.RGB(205, 168, 120)
-	b.line = mygo.RGB(116, 86, 52)
+	b.wood = mygo.RGB(214, 178, 128)
+	b.line = mygo.RGB(120, 88, 52)
 	b.black = mygo.RGB(16, 16, 20)
 	b.blackTop = mygo.RGB(74, 74, 84)
 	b.white = mygo.RGB(214, 214, 222)
@@ -147,14 +145,8 @@ func (b *BoardView) cellAt(geo geometry, x, y float32) (int, int) {
 
 func (b *BoardView) paint(p *mygo.Painter, r mygo.Rect, geo geometry) {
 	b.rect = r
-	p.Shadow(r, boardRadius, 0, 8, 24, 0, mygo.RGB(84, 60, 32).Alpha(0.22))
-	p.FillGradient(r, mygo.LinearGradient{
-		Stops: []mygo.GradientStop{{Color: b.woodTop, At: 0}, {Color: b.woodLow, At: 1}},
-		Angle: 174,
-	}, boardRadius)
-	p.Stroke(r, b.edge.Alpha(0.55), boardRadius, 1)
-	p.Stroke(mygo.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: r.H - 2},
-		mygo.RGB(255, 255, 255).Alpha(0.28), boardRadius-1, 1)
+	p.Fill(r, b.wood, boardRadius)
+	p.Stroke(r, b.edge, boardRadius, 1)
 
 	first := r.X + geo.OriginX
 	top := r.Y + geo.OriginY
