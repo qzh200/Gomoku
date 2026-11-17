@@ -22,9 +22,8 @@ class ChatMessage:
 
 
 class Answer:
-    def __init__(self, text: str, from_reasoning: bool = False) -> None:
+    def __init__(self, text: str) -> None:
         self.text = text
-        self.from_reasoning = from_reasoning
 
 
 class OpenAIClient:
@@ -106,7 +105,7 @@ class OpenAIClient:
 
         reasoning = message.get("reasoning_content")
         if isinstance(reasoning, str) and reasoning.strip():
-            return Answer(reasoning.strip(), from_reasoning=True)
+            return Answer(reasoning.strip())
 
         finish = choice.get("finish_reason")
         if finish == "length":

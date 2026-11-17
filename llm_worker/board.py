@@ -110,11 +110,6 @@ def threats(board_state: list[list[int]], player: int) -> Threats:
     return Threats([], [], fours, double_threes(board_state, player))
 
 
-def describe_threats(board_state: list[list[int]], player: int) -> list[str]:
-    """这一方手里有什么牌。"""
-    return describe(threats(board_state, player), player)
-
-
 def describe(found: Threats, player: int) -> list[str]:
     name = player_name(player)
 
@@ -233,22 +228,12 @@ def parse_move(text: str) -> tuple[int, int] | None:
         return None
     value = payload.get("move")
     if isinstance(value, dict):
-        return dict_to_cell(value)
+        payload = value
     row = payload.get("row")
     col = payload.get("col")
     if isinstance(row, int) and isinstance(col, int) and in_bounds(row, col):
         return row, col
     return None
-
-
-def dict_to_cell(payload: dict) -> tuple[int, int] | None:
-    row = payload.get("row")
-    col = payload.get("col")
-    if not isinstance(row, int) or not isinstance(col, int):
-        return None
-    if not in_bounds(row, col):
-        return None
-    return row, col
 
 
 def _json_object(text: str) -> dict | None:

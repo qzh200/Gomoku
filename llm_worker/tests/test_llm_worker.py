@@ -13,7 +13,7 @@ from llm_worker.openai_client import APIError, Answer, ChatMessage, OpenAIClient
 
 
 class FakeClient:
-    def __init__(self, answers: list[str | tuple[str, bool]]) -> None:
+    def __init__(self, answers: list[str]) -> None:
         self.answers = list(answers)
         self.calls: list[list[ChatMessage]] = []
 
@@ -21,10 +21,7 @@ class FakeClient:
         self.calls.append(messages)
         if not self.answers:
             raise APIError("没有更多回答")
-        answer = self.answers.pop(0)
-        if isinstance(answer, tuple):
-            return Answer(answer[0], from_reasoning=answer[1])
-        return Answer(answer)
+        return Answer(self.answers.pop(0))
 
 
 def empty_board() -> list[list[int]]:
@@ -115,7 +112,7 @@ class BoardTests(unittest.TestCase):
         for col in range(7, 11):
             state[7][col] = board.BLACK
         self.assertEqual(board.five_points(state, board.BLACK), [(7, 6), (7, 11)])
-        line = board.describe_threats(state, board.BLACK)[0]
+        line = board.describe(board.threats(state, board.BLACK), board.BLACK)[0]
         self.assertIn("2 个成五点", line)
         self.assertIn("堵一个也挡不住", line)
 
@@ -126,7 +123,7 @@ class BoardTests(unittest.TestCase):
         state[7][6] = board.WHITE
         self.assertEqual(board.five_points(state, board.BLACK), [(7, 11)])
         self.assertEqual(
-            board.describe_threats(state, board.BLACK),
+            board.describe(board.threats(state, board.BLACK), board.BLACK),
             ["黑棋下在 (7, 11) 就成五。"],
         )
 
@@ -136,7 +133,7 @@ class BoardTests(unittest.TestCase):
             state[row][col] = board.BLACK
         open_fours, fours = board.four_makers(state, board.BLACK)
         self.assertEqual(open_fours, [(4, 10), (8, 6)])
-        line = board.describe_threats(state, board.BLACK)[0]
+        line = board.describe(board.threats(state, board.BLACK), board.BLACK)[0]
         self.assertIn("(4, 10)、(8, 6) 就成活四", line)
         self.assertIn("挡不住", line)
 
@@ -159,7 +156,7 @@ class BoardTests(unittest.TestCase):
     def test_reports_nothing_for_a_loose_position(self) -> None:
         state = empty_board()
         state[5][5] = board.BLACK
-        self.assertEqual(board.describe_threats(state, board.BLACK), [])
+        self.assertEqual(board.describe(board.threats(state, board.BLACK), board.BLACK), [])
 
     def test_parses_a_json_move(self) -> None:
         self.assertEqual(board.parse_move('好的：{"move": {"row": 7, "col": 7}}'), (7, 7))
@@ -321,7 +318,6 @@ class OpenAIClientTests(unittest.TestCase):
         body = json.dumps({"choices": [{"message": {"content": " hi "}}]}).encode("utf-8")
         answer = client._content_of(body)
         self.assertEqual(answer.text, "hi")
-        self.assertFalse(answer.from_reasoning)
 
     def test_falls_back_to_the_reasoning_of_the_model(self) -> None:
         client = OpenAIClient("http://127.0.0.1:1/v1", "key", "model")
@@ -330,7 +326,6 @@ class OpenAIClientTests(unittest.TestCase):
         ).encode("utf-8")
         answer = client._content_of(body)
         self.assertEqual(answer.text, "思考")
-        self.assertTrue(answer.from_reasoning)
 
     def test_reports_an_empty_answer_that_ran_out_of_tokens(self) -> None:
         client = OpenAIClient("http://127.0.0.1:1/v1", "key", "model")
@@ -382,7 +377,6 @@ class SettingsTokenTests(unittest.TestCase):
             }
         )
         self.assertEqual(settings.engine_token, "token")
-        self.assertEqual(settings.engine_id, "llm")
         self.assertEqual(settings.worker_id, "llm-worker-01")
         self.assertTrue(settings.disable_thinking)
 
@@ -417,12 +411,12 @@ class SettingsTokenTests(unittest.TestCase):
 
 class EngineReasoningTests(unittest.TestCase):
     def test_takes_the_json_out_of_the_reasoning(self) -> None:
-        client = FakeClient([('先看看棋盘 {"move": {"row": 7, "col": 7}}', True)])
+        client = FakeClient(['先看看棋盘 {"move": {"row": 7, "col": 7}}'])
         engine = LLMEngine(client)
         self.assertEqual(engine.choose_move(empty_board(), [], board.BLACK), (7, 7))
 
     def test_does_not_read_a_coordinate_from_the_reasoning(self) -> None:
-        client = FakeClient([("O 在 H8，下一步可能下在 I9", True)])
+        client = FakeClient(["O 在 H8，下一步可能下在 I9"])
         engine = LLMEngine(client, max_attempts=1)
         move = engine.choose_move(empty_board(), [], board.BLACK)
         self.assertEqual(move, (7, 7))

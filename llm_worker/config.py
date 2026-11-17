@@ -31,7 +31,6 @@ DEFAULT_ENGINE_ID = "llm"
 class Settings:
     mygo_url: str
     engine_token: str
-    engine_id: str
     worker_id: str
     wait_seconds: int
     extend_seconds: int
@@ -81,7 +80,6 @@ class Settings:
         return cls(
             mygo_url=connection.mygo_url,
             engine_token=connection.engine_token,
-            engine_id=connection.engine_id,
             worker_id=connection.worker_id,
             wait_seconds=connection.wait_seconds,
             extend_seconds=connection.extend_seconds,
