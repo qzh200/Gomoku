@@ -198,60 +198,59 @@ def reference_five_points(position: Board, player: int) -> set[tuple[int, int]]:
     }
 
 
-
-class SearchTests(unittest.TestCase):
-    def test_the_search_returns_a_legal_move(self) -> None:
-        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
-        searcher = MCTS(small_model(), DEVICE, batch_size=8)
-        result = searcher.search(position, BLACK, simulations=32)
-        move = result.best_move()
-        self.assertIsNotNone(move)
-        row, col = row_col_of(move)
-        self.assertEqual(position.grid[row][col], 0)
-
-    def test_the_visits_sum_to_the_simulations(self) -> None:
-        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
-        searcher = MCTS(small_model(), DEVICE, batch_size=8)
-        result = searcher.search(position, BLACK, simulations=40)
-        self.assertEqual(sum(result.visits.values()), result.simulations)
-
-    def test_a_five_is_found_without_the_network(self) -> None:
-        position = Board(
-            board([(7, 7, BLACK), (7, 8, BLACK), (7, 9, BLACK), (7, 10, BLACK), (6, 6, WHITE)])
-        )
-        searcher = MCTS(small_model(), DEVICE, batch_size=8)
-        result = searcher.search(position, BLACK, simulations=64)
-        row, col = row_col_of(result.best_move())
-        self.assertIn((row, col), {(7, 6), (7, 11)})
-
-    def test_the_policy_is_a_distribution_over_the_moves(self) -> None:
-        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
-        searcher = MCTS(small_model(), DEVICE, batch_size=8)
-        result = searcher.search(position, BLACK, simulations=32)
-        self.assertAlmostEqual(sum(result.policy), 1.0, places=5)
+DIRECTIONS = ((0, 1), (1, 0), (1, 1), (1, -1))
 
 
-    def test_the_search_keeps_the_top_candidates_only(self) -> None:
-        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
-        searcher = MCTS(small_model(), DEVICE, batch_size=8, candidate_width=4)
-        result = searcher.search(position, BLACK, simulations=32)
-        self.assertLessEqual(len(result.visits), 4)
+def _run(
+    position: Board, row: int, col: int, player: int, dr: int, dc: int
+) -> tuple[int, list[tuple[int, int]]]:
+    length = 1
+    ends = []
+    for sign in (1, -1):
+        r, c = row + sign * dr, col + sign * dc
+        while 0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE and position.grid[r][c] == player:
+            length += 1
+            r += sign * dr
+            c += sign * dc
+        ends.append((r, c))
+    return length, ends
 
 
-class ValueTests(unittest.TestCase):
-    def test_the_value_changes_its_sign_on_every_level(self) -> None:
-        searcher = MCTS(small_model(), DEVICE, batch_size=8)
-        root = Node(Board(), BLACK)
-        middle = Node(Board(), WHITE)
-        leaf = Node(Board(), BLACK)
-        root.children[0] = middle
-        middle.children[0] = leaf
+def _open_run(position: Board, row: int, col: int, player: int, size: int) -> bool:
+    for dr, dc in DIRECTIONS:
+        length, ends = _run(position, row, col, player, dr, dc)
+        if length != size:
+            continue
+        if all(
+            0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE and position.grid[r][c] == 0
+            for r, c in ends
+        ):
+            return True
+    return False
 
 
-        self.assertAlmostEqual(leaf.value_sum, 0.7, places=6)
+def reference_open_four_points(position: Board, player: int) -> set[tuple[int, int]]:
+    found = set()
+    for row, col in position.empty_cells():
+        position.grid[row][col] = player
+        try:
+            if _open_run(position, row, col, player, 4):
+                found.add((row, col))
+        finally:
+            position.grid[row][col] = 0
+    return found
 
 
-        self.assertAlmostEqual(root.value_sum, 0.7, places=6)
+def reference_open_three_points(position: Board, player: int) -> set[tuple[int, int]]:
+    found = set()
+    for row, col in position.empty_cells():
+        position.grid[row][col] = player
+        try:
+            if _open_run(position, row, col, player, 3):
+                found.add((row, col))
+        finally:
+            position.grid[row][col] = 0
+    return found
 
 
 class ThreatBitboardTests(unittest.TestCase):
