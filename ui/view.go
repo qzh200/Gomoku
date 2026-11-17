@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	sidebarWidth  = 284.0
+	sidebarWidth  = 288.0
 	historyWidth  = 248.0
 	pagePadding   = 16.0
 	columnGap     = 16.0
@@ -41,7 +41,7 @@ func (a *App) build(c *mygo.Context) {
 
 	page := mygo.Column(c).Fill()
 	if !c.Vibrancy() {
-		page.Background(tk.BgLayout)
+		paintBackdrop(page, tk)
 	}
 	page.Children(func() {
 		a.buildToolbar(c, tk)
@@ -52,6 +52,30 @@ func (a *App) build(c *mygo.Context) {
 			a.buildHistory(c, tk)
 		})
 		feedback.ToastHost(c, feedback.ToastHostProps{})
+	})
+}
+
+func panelProps(tk *theme.Tokens) layout.BlockProps {
+	if tk.Dark {
+		return layout.BlockProps{}
+	}
+	return layout.BlockProps{Variant: layout.BlockOutlined, Shadow: true}
+}
+
+func paintBackdrop(page mygo.Element, tk *theme.Tokens) {
+	top, low := mygo.RGB(252, 253, 254), mygo.RGB(224, 230, 239)
+	glow, glowAlpha := mygo.RGB(206, 166, 110), float32(0.2)
+	if tk.Dark {
+		top, low = mygo.RGB(36, 38, 44), mygo.RGB(13, 14, 17)
+		glow, glowAlpha = mygo.RGB(226, 190, 142), 0.08
+	}
+	page.Draw(func(p *mygo.Painter, r mygo.Rect) {
+		p.FillGradient(r, mygo.LinearGradient{From: top, To: low, Angle: 180}, 0)
+		p.FillRadialGradient(r, mygo.RadialGradient{
+			Stops:  []mygo.GradientStop{{Color: glow.Alpha(glowAlpha), At: 0}, {Color: glow.Alpha(0), At: 1}},
+			Center: mygo.Point{X: 0.5, Y: 0.38},
+			Radius: r.W * 0.6,
+		}, 0)
 	})
 }
 
@@ -110,7 +134,7 @@ func (a *App) buildSidebar(c *mygo.Context, tk *theme.Tokens) {
 	column.Children(func() {
 		scroll := layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Vertical}, func() {
 			mygo.Column(c).Gap(columnGap).Width(sidebarWidth - 8).MinHeight(available).Children(func() {
-				panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(16).Radius(tk.BorderRadiusLG)
+				panel := layout.Block(c, panelProps(tk)).Padding(16).Radius(tk.BorderRadiusLG)
 				panel.Children(func() {
 					mygo.Column(c).Gap(14).Children(func() {
 						display.Text(c, "新对局", display.TextProps{Strong: true})
@@ -137,7 +161,7 @@ func (a *App) buildReplayPanel(c *mygo.Context, tk *theme.Tokens) {
 	reviewing := a.st.reviewing
 	a.mu.Unlock()
 
-	panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(16).Radius(tk.BorderRadiusLG).
+	panel := layout.Block(c, panelProps(tk)).Padding(16).Radius(tk.BorderRadiusLG).
 		Grow(1).Basis(0).MinHeight(160)
 	panel.Children(func() {
 		mygo.Column(c).Gap(8).Grow(1).Basis(0).MinHeight(0).Children(func() {
@@ -393,7 +417,7 @@ func (a *App) buildGameInfo(c *mygo.Context, tk *theme.Tokens) {
 	game := a.st.game
 	a.mu.Unlock()
 
-	panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(16).Radius(tk.BorderRadiusLG)
+	panel := layout.Block(c, panelProps(tk)).Padding(16).Radius(tk.BorderRadiusLG)
 	panel.Children(func() {
 		mygo.Column(c).Gap(10).Children(func() {
 			display.Text(c, "对局信息", display.TextProps{Strong: true})
@@ -438,7 +462,7 @@ func (a *App) buildBoardArea(c *mygo.Context, tk *theme.Tokens) {
 		a.board.OnPick = a.pick
 	}
 
-	card := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Grow(1).Basis(0).
+	card := layout.Block(c, layout.BlockProps{Variant: layout.BlockBorderless}).Grow(1).Basis(0).
 		Padding(boardPadding).Radius(tk.BorderRadiusLG)
 	card.Children(func() {
 		mygo.Box(c).Grow(1).Basis(0).Center().Children(func() {
@@ -489,7 +513,7 @@ func (a *App) buildHistory(c *mygo.Context, tk *theme.Tokens) {
 		history = reviewMoves
 	}
 
-	panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Width(historyWidth).
+	panel := layout.Block(c, panelProps(tk)).Width(historyWidth).
 		Padding(16).Radius(tk.BorderRadiusLG)
 	panel.Children(func() {
 		mygo.Column(c).Gap(10).Grow(1).Basis(0).Children(func() {
