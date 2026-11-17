@@ -12,7 +12,14 @@ import torch
 from .dataset import TensorDataset
 from .network import GomokuNet, evaluate, load_model, save, train_tensors
 from .selfplay import Example
-from .teacher import VALUE_EVAL, VALUE_OUTCOME, collect_one_game
+from .teacher import (
+    VALUE_EVAL,
+    VALUE_OUTCOME,
+    VALUE_SEARCH,
+    collect_az_game,
+    collect_one_game,
+)
+from .train import resolve_device
 
 
 DEFAULT_GAMES = 100
@@ -27,6 +34,21 @@ DEFAULT_BATCH_SIZE = 1024
 DEFAULT_WORKERS = max(1, (os.cpu_count() or 2) - 1)
 
 
+DEFAULT_TEACHER = "classical"
+
+
+DEFAULT_TEACHER_MODEL = "models/az/current.pt"
+
+
+DEFAULT_TEACHER_SIMULATIONS = 400
+
+
+DEFAULT_TEACHER_TIME = 1.0
+
+
+DEFAULT_TEACHER_WIDTH = 16
+
+
 DEFAULT_TEACHER_MOVES = 8
 
 
@@ -36,11 +58,41 @@ DEFAULT_DECAY = 2.0
 DEFAULT_SCORE_SCALE = 8_000.0
 
 
-DEFAULT_VALUE_TARGET = VALUE_EVAL
+DEFAULT_VALUE_TARGET = None
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="用传统引擎当老师，预热神经网络")
+    parser = argparse.ArgumentParser(description="用传统引擎或旧 AZ 模型当老师，预热神经网络")
+    parser.add_argument(
+        "--teacher",
+        choices=("classical", "az"),
+        default=DEFAULT_TEACHER,
+        help="老师是谁：classical 是传统引擎，az 是旧的自对弈权重（更强的搜索当老师）",
+    )
+    parser.add_argument(
+        "--teacher-model",
+        default=DEFAULT_TEACHER_MODEL,
+        help="--teacher az 时的老师权重，通常是上一代的 champion",
+    )
+    parser.add_argument(
+        "--teacher-simulations",
+        type=int,
+        default=DEFAULT_TEACHER_SIMULATIONS,
+        help="--teacher az 时每手 MCTS 模拟数",
+    )
+    parser.add_argument(
+        "--teacher-time",
+        type=float,
+        default=DEFAULT_TEACHER_TIME,
+        help="--teacher az 时每手秒数上限",
+    )
+    parser.add_argument(
+        "--teacher-width",
+        type=int,
+        default=DEFAULT_TEACHER_WIDTH,
+        help="--teacher az 时每个节点保留的候选数",
+    )
+    parser.add_argument("--device", default="auto", help="auto、cpu、cuda 或 cuda:0")
     parser.add_argument("--games", type=int, default=DEFAULT_GAMES, help="棋局数")
     parser.add_argument("--depth", type=int, default=DEFAULT_DEPTH, help="传统引擎的搜索深度")
     parser.add_argument("--width", type=int, default=DEFAULT_WIDTH, help="传统引擎的宽度")
@@ -50,9 +102,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--score-scale", type=float, default=DEFAULT_SCORE_SCALE, help="分数到价值的换算")
     parser.add_argument(
         "--value-target",
-        choices=(VALUE_OUTCOME, VALUE_EVAL),
+        choices=(VALUE_OUTCOME, VALUE_EVAL, VALUE_SEARCH),
         default=DEFAULT_VALUE_TARGET,
-        help="价值目标：outcome 是整局结果（与自对弈一致），eval 是传统引擎的评估分",
+        help="价值目标：outcome 是整局结果，eval 是传统引擎的评估分，"
+        "search 是旧 AZ 模型的搜索值；不写则按老师取默认",
     )
     parser.add_argument("--channels", type=int, default=DEFAULT_CHANNELS, help="网络通道数")
     parser.add_argument("--blocks", type=int, default=DEFAULT_BLOCKS, help="残差块数量")
@@ -103,11 +156,26 @@ def _collect_parallel(
     return [example for batch in collected for example in batch]
 
 
+def resolve_value_target(teacher: str, requested: str | None) -> str:
+    if requested is None:
+        return VALUE_SEARCH if teacher == "az" else VALUE_EVAL
+    if teacher == "az" and requested == VALUE_EVAL:
+        raise ValueError("AZ 老师的价值目标只能是 search 或 outcome")
+    if teacher == "classical" and requested == VALUE_SEARCH:
+        raise ValueError("传统老师的价值目标只能是 eval 或 outcome")
+    return requested
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     rng = random.Random(args.seed)
     torch.manual_seed(args.seed if args.seed is not None else 0)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = resolve_device(args.device)
+    try:
+        value_target = resolve_value_target(args.teacher, args.value_target)
+    except ValueError as error:
+        print(error, flush=True)
+        return 2
 
     model_path = Path(args.model)
     if model_path.is_file():
@@ -117,17 +185,46 @@ def main(argv: list[str] | None = None) -> int:
         model = GomokuNet(channels=args.channels, blocks=args.blocks).to(device)
         print(f"没有权重文件，从随机网络开始: {model_path}", flush=True)
 
-    examples = collect_examples(
-        args.games,
-        args.depth,
-        args.width,
-        args.time,
-        args.teacher_moves,
-        args.decay,
-        args.score_scale,
-        args.value_target,
-        args.workers,
-    )
+    if args.teacher == "az":
+        if args.workers > 1:
+            print("AZ 老师走后端 GPU 推理，单进程采集；忽略 --workers", flush=True)
+        teacher_path = Path(args.teacher_model)
+        if not teacher_path.is_file():
+            print(f"找不到老师权重: {teacher_path}", flush=True)
+            return 1
+        teacher_model = load_model(str(teacher_path), device)
+        print(
+            f"老师: AZ {teacher_path}，{args.teacher_simulations} 次模拟"
+            f" / {args.teacher_time} 秒 / 宽度 {args.teacher_width}，价值目标 {value_target}",
+            flush=True,
+        )
+        examples: list[Example] = []
+        for game in range(args.games):
+            seed = None if args.seed is None else args.seed + game
+            examples.extend(
+                collect_az_game(
+                    teacher_model,
+                    device,
+                    args.teacher_simulations,
+                    args.teacher_time,
+                    args.teacher_width,
+                    value_target,
+                    seed=seed,
+                )
+            )
+    else:
+        print(f"老师: 传统引擎 d{args.depth}/{args.time} 秒，价值目标 {value_target}", flush=True)
+        examples = collect_examples(
+            args.games,
+            args.depth,
+            args.width,
+            args.time,
+            args.teacher_moves,
+            args.decay,
+            args.score_scale,
+            value_target,
+            args.workers,
+        )
 
 
     held_out = max(1, len(examples) // 10)
