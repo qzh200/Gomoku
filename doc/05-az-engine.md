@@ -328,6 +328,7 @@ P = (1 - 0.25) * P + 0.25 * η
 | `--buffer` | 100000 | 回放池容量 |
 | `--simulations` | 无 | 固定模拟数；不给则按进度 128/256/400 |
 | `--search-batch` | 32 | MCTS 叶批大小 |
+| `--workers` / `--worker-device` | 1 / cpu | 并行自对弈进程数与它们的推理设备（`cuda` 需留够显存） |
 | `--temperature-moves` | 12 | 前多少手温度采样 |
 | `--augment` | 关 | 八对称增强 |
 | `--device` / `--model` / `--init` / `--seed` | auto / `models/az/current.pt` / 同 model / 0 | 运行参数 |
@@ -336,17 +337,28 @@ P = (1 - 0.25) * P + 0.25 * η
 
 ### 8.6 性能参考
 
-RTX 4060 Laptop、6×64 网络、批 256、CUDA bf16：
+RTX 4060 Laptop（16 核 32 线程，8 GB 显存）、6×64 网络、批 256、CUDA bf16：
 
 | 项目 | 参考值 |
 | --- | --- |
 | `encode`（中盘 15 子） | 93 µs |
-| 梯度一步 | 17.9 ms |
-| 全盘 215 个空点，128 模拟 | 0.14 s/手 |
-| 全盘 215 个空点，400 模拟 | 0.34 s/手 |
-| 默认 100 轮 × 10 局 + 25,000 步 | 约 2–3 小时 |
+| 梯度一步 | 19 ms（GPU 平均 81%，峰值 97%） |
+| 单进程自对弈，128 模拟 | 7.9 s/局（GPU 平均 30%，14 W） |
+| 每轮 10 局（4 个 CUDA 进程，128/256/400 模拟） | 30 / 53 / 75 s |
+| 8 局总量，8 个 CPU 进程 | 79.7 s |
+| 8 局总量，8 个 CUDA 进程 | 21.7 s（显存 5.9 GB） |
+| 默认 100 轮 × 10 局 + 25,000 步 | 单进程约 4.4 小时；4 个 CUDA 进程约 1.5 小时 |
 
-梯度步只占其中约 8 分钟，其余时间在自对弈。
+两相的资源占用完全不同：自对弈是单核 Python（节点展开 + 编码），GPU 平均只忙
+30%；梯度步阶段 GPU 忙到 81–97%，只占总时长的一小部分。因此吞吐参数只有并行
+自对弈一项——`--search-batch` 从 8 调到 225、torch 线程从 1 调到 24，搜索吞吐都
+稳定在 1200–1350 sims/s，没有变化。
+
+并行自对弈用 `--workers N --worker-device cuda`，每个进程独立跑一局、加载同一份
+检查点（按 `mtime` 判定是否需要重载），样本结构与串行完全一致。实测 8 局：
+4 进程 24.6 s、8 进程 21.7 s，而串行是 62.9 s；每进程约 250–360 MB 显存，8 进程
+接近 8 GB 卡的上限，4 进程留有余量。CPU 推理的进程没有这个显存压力，但每局慢
+4–5 倍，8–16 进程合起来只有 1.5–1.6× 加速。
 
 ## 9. VCF / VCT
 
@@ -405,11 +417,13 @@ python -m venv .venv
 # 1. 自对弈训练（从随机网络开始；有检查点就用 --init 续训）
 .venv/Scripts/python.exe -m az_worker.train \
   --total-steps 25000 --iterations 100 --games 10 --device cuda \
+  --workers 4 --worker-device cuda \
   --model models/az/current.pt --buffer-file models/az/replay.pt --seed 1
 
 # 2. 中断后续训（回放池与步数一起恢复）
 .venv/Scripts/python.exe -m az_worker.train \
   --total-steps 25000 --iterations 100 --games 10 --device cuda \
+  --workers 4 --worker-device cuda \
   --model models/az/current.pt --init models/az/current.pt \
   --buffer-file models/az/replay.pt --resume
 

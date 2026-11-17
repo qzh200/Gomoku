@@ -214,16 +214,22 @@ python -m unittest discover -s llm_worker/tests -t .
 # 从随机网络起训（默认 25,000 步 / 100 轮 / 每轮 10 局）
 .venv/Scripts/python.exe -m az_worker.train \
   --total-steps 25000 --iterations 100 --games 10 --device cuda \
+  --workers 4 --worker-device cuda \
   --model models/az/current.pt --buffer-file models/az/replay.pt --seed 1
 
 # 中断后续训：权重、回放池、已完成步数一起恢复
 .venv/Scripts/python.exe -m az_worker.train \
   --total-steps 25000 --iterations 100 --games 10 --device cuda \
+  --workers 4 --worker-device cuda \
   --model models/az/current.pt --init models/az/current.pt \
   --buffer-file models/az/replay.pt --resume
 ```
 
-默认预算在 RTX 4060 Laptop 上约 2–3 小时；梯度步只占其中约 8 分钟，其余时间用于自对弈。
+整套默认预算在 RTX 4060 Laptop 上：单进程约 4.4 小时，4 个 CUDA 自对弈进程约 1.5 小时
+（每轮 10 局在 128/256/400 模拟下分别 30/53/75 秒，梯度步 250 步约 5 秒）。自对弈是
+单核 Python，梯度步阶段 GPU 才满载；`--search-batch` 与线程数不是吞吐参数，并行进程才是。
+显存按每进程 250–360 MB 预留，8 GB 卡用 4 个进程留有余量。
+
 要提高棋力，增加 `--total-steps`、`--games`、`--iterations`，方法与代码不用改。训练会
 占满显存，建议与 Worker 分开运行。
 

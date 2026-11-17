@@ -10,10 +10,13 @@ import torch
 from .board import BLACK, Board, other
 from .features import encode, legal_mask
 from .mcts import MCTS, row_col_of
-from .network import GomokuNet, save
+from .network import GomokuNet, load_model, save
 
 
 TEMPERATURE_MOVES = 12
+
+
+_WORKER: dict = {}
 
 
 @dataclass
@@ -105,3 +108,33 @@ def save_checkpoint(model: GomokuNet, path: str | Path, meta: dict | None = None
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     save(model, str(target), meta)
+
+
+def worker_init(device: str, temperature_moves: int = TEMPERATURE_MOVES) -> None:
+    torch.set_num_threads(1)
+    _WORKER.clear()
+    _WORKER["device"] = torch.device(device)
+    _WORKER["temperature_moves"] = temperature_moves
+
+
+def checkpoint_stamp(path: str | Path) -> int:
+    return Path(path).stat().st_mtime_ns
+
+
+def worker_play(task: tuple[str, int, int, int, int]) -> GameResult:
+    model_path, stamp, simulations, batch_size, seed = task
+    if _WORKER.get("path") != model_path or _WORKER.get("stamp") != stamp:
+        model = load_model(model_path, _WORKER["device"])
+        model.eval()
+        _WORKER["path"] = model_path
+        _WORKER["stamp"] = stamp
+        _WORKER["model"] = model
+    player = SelfPlay(
+        _WORKER["model"],
+        _WORKER["device"],
+        simulations=simulations,
+        batch_size=batch_size,
+        temperature_moves=_WORKER["temperature_moves"],
+        seed=seed,
+    )
+    return player.play_game()

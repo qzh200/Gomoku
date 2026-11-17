@@ -4,13 +4,21 @@ import argparse
 import math
 import random
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import torch
 
 from .dataset import TensorDataset
 from .network import GomokuNet, load_model, read_meta, train_batch
-from .selfplay import TEMPERATURE_MOVES, SelfPlay, save_checkpoint
+from .selfplay import (
+    TEMPERATURE_MOVES,
+    SelfPlay,
+    checkpoint_stamp,
+    save_checkpoint,
+    worker_init,
+    worker_play,
+)
 
 
 TOTAL_STEPS = 25_000
@@ -81,6 +89,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--search-batch", type=int, default=SEARCH_BATCH, help="MCTS 批大小")
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="并行自对弈进程数；1 表示在当前进程里串行跑，>1 时每个进程占一个 CPU 核",
+    )
+    parser.add_argument(
+        "--worker-device",
+        default="cpu",
+        help="并行自对弈进程的推理设备；CPU 推理不抢显存，通常比多进程抢 GPU 划算",
+    )
+    parser.add_argument(
         "--temperature-moves", type=int, default=TEMPERATURE_MOVES, help="前多少手用温度采样"
     )
     parser.add_argument("--augment", action="store_true", help="开启八对称数据增强（默认关闭）")
@@ -146,24 +165,48 @@ def main(argv: list[str] | None = None) -> int:
         f"每轮 {steps_per_iteration} 步，轮数 {args.iterations}",
         flush=True,
     )
+    pool = None
+    if args.workers > 1:
+        pool = ProcessPoolExecutor(
+            max_workers=args.workers,
+            initializer=worker_init,
+            initargs=(args.worker_device, args.temperature_moves),
+        )
+        print(f"并行自对弈: {args.workers} 个进程，推理设备 {args.worker_device}", flush=True)
 
     for iteration in range(1, args.iterations + 1):
         if step >= args.total_steps:
             break
         started = time.monotonic()
         simulations = args.simulations or simulations_for(step, args.total_steps)
-        player = SelfPlay(
-            model,
-            device,
-            simulations=simulations,
-            batch_size=args.search_batch,
-            temperature_moves=args.temperature_moves,
-            seed=rng.randrange(1 << 30),
-        )
+        if pool is not None:
+            save_checkpoint(model, model_path, {"step": step})
+            stamp = checkpoint_stamp(str(model_path))
+            tasks = [
+                (
+                    str(model_path),
+                    stamp,
+                    simulations,
+                    args.search_batch,
+                    rng.randrange(1 << 30),
+                )
+                for _ in range(args.games)
+            ]
+            futures = [pool.submit(worker_play, task) for task in tasks]
+            games = [future.result() for future in futures]
+        else:
+            player = SelfPlay(
+                model,
+                device,
+                simulations=simulations,
+                batch_size=args.search_batch,
+                temperature_moves=args.temperature_moves,
+                seed=rng.randrange(1 << 30),
+            )
+            games = [player.play_game() for _ in range(args.games)]
         wins = {1: 0, 2: 0, None: 0}
         plies = 0
-        for _ in range(args.games):
-            game = player.play_game()
+        for game in games:
             dataset.extend(game.examples)
             wins[game.winner] = wins.get(game.winner, 0) + 1
             plies += game.moves
@@ -216,6 +259,8 @@ def main(argv: list[str] | None = None) -> int:
             f"用时 {elapsed:.0f} 秒",
             flush=True,
         )
+    if pool is not None:
+        pool.shutdown()
     return 0
 
 

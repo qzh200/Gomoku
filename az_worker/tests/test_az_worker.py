@@ -5,6 +5,7 @@ import random
 import tempfile
 import time
 import unittest
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -32,7 +33,13 @@ from az_worker.features import (
 )
 from az_worker.mcts import C_BASE, C_INIT, MCTS, Node, cell_of, row_col_of
 from az_worker.network import ACTION_COUNT, GomokuNet, load_model, save, train_batch
-from az_worker.selfplay import Example, SelfPlay
+from az_worker.selfplay import (
+    Example,
+    SelfPlay,
+    checkpoint_stamp,
+    worker_init,
+    worker_play,
+)
 from az_worker.threats import board_masks, five_mask, open_three_mask, threat_masks
 from az_worker.train import learning_rate, simulations_for
 from az_worker.vcf import VCF, VCT, Solver, winning_move
@@ -463,6 +470,40 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(simulations_for(16_666, total), 256)
         self.assertEqual(simulations_for(16_667, total), 400)
         self.assertEqual(simulations_for(24_999, total), 400)
+
+
+class ParallelSelfPlayTests(unittest.TestCase):
+    def test_a_worker_plays_from_a_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "model.pt"
+            save(small_model(), str(path))
+            worker_init("cpu", 12)
+            game = worker_play((str(path), checkpoint_stamp(str(path)), 6, 4, 1))
+        self.assertGreater(game.moves, 0)
+        for example in game.examples:
+            self.assertEqual(
+                example.planes.shape, (PLANE_COUNT, BOARD_SIZE, BOARD_SIZE)
+            )
+            self.assertAlmostEqual(float(example.policy.sum()), 1.0, places=5)
+
+    def test_two_processes_return_games(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "model.pt"
+            save(small_model(), str(path))
+            stamp = checkpoint_stamp(str(path))
+            with ProcessPoolExecutor(
+                max_workers=2, initializer=worker_init, initargs=("cpu", 12)
+            ) as pool:
+                futures = [
+                    pool.submit(worker_play, (str(path), stamp, 6, 4, seed))
+                    for seed in (1, 2)
+                ]
+                games = [future.result() for future in futures]
+        self.assertEqual(len(games), 2)
+        for game in games:
+            self.assertGreater(game.moves, 0)
+            for example in game.examples:
+                self.assertAlmostEqual(float(example.policy.sum()), 1.0, places=5)
 
 
 class DatasetTests(unittest.TestCase):
