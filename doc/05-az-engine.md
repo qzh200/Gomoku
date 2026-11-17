@@ -338,7 +338,8 @@ P = (1 - 0.25) * P + 0.25 * η
 | `--log-file` | auto | 每轮追加一行 CSV；auto = 权重同目录的 `<model>.log`，`none` 关闭 |
 | `--tensorboard` | auto | 事件目录；auto = 权重同目录的 `tensorboard/`，`none` 关闭 |
 | `--eval-every` / `--eval-games` | 20 / 4 | 每 N 轮跟传统引擎做棋力探针及其局数（0 = 关） |
-| `--eval-simulations` / `--eval-classical-depth` / `--eval-classical-time` | 64 / 2 / 0.05 | 探针的搜索预算与对手强度 |
+| `--eval-simulations` / `--eval-vcf` / `--eval-vct` | 128 / 0.1 / 0.1 | 探针每手的搜索预算与解算器预算 |
+| `--eval-classical-depth` / `--eval-classical-time` | 2 / 0.05 | 探针对手强度 |
 | `--progress` | on | tqdm 进度条；`off` 用于把输出重定向到日志 |
 
 ### 8.6 性能参考
@@ -382,9 +383,10 @@ CUDA 上下文，进程数不再受显存限制，请求按批合并后转发到
 # 浏览器打开 http://127.0.0.1:6006
 ```
 
-`--eval-every 20 --eval-games 4`（默认）：每 20 轮跟传统引擎（d2 / 0.05 秒，候选 64
-模拟）打 4 局，胜率写进 `eval/winrate`，约占全程 3–5% 的时间。这是粗粒度的趋势线，
-正式比较棋力用 `az_worker.arena`（≥40 局），`--eval-every 0` 可关闭。
+`--eval-every 20 --eval-games 4`（默认）：每 20 轮跟传统引擎（d2 / 0.05 秒）打 4 局，
+候选按接近实战的方式评估——128 模拟 + VCF/VCT 各 0.1 秒——胜率写进 `eval/winrate`，
+约占全程 3–5% 的时间。这是粗粒度的趋势线，正式比较棋力用 `az_worker.arena`（≥40 局、
+2 秒/手），`--eval-every 0` 可关闭。
 续训会读回优化器动量、已完成步数与自对弈局数，曲线不会因为重启而跳变。
 
 ## 9. VCF / VCT

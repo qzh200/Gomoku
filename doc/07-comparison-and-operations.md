@@ -248,8 +248,9 @@ python -m unittest discover -s llm_worker/tests -t .
 # 浏览器打开 http://127.0.0.1:6006
 ```
 
-棋力探针默认每 20 轮打 4 局（对手传统引擎 d2/0.05s），约占全程 3–5%；`--eval-every 0`
-关闭。检查点内含优化器动量与 `step`/`iteration`/`games`，续训后曲线连续。
+棋力探针默认每 20 轮打 4 局（对手传统引擎 d2/0.05s，候选 128 模拟 + VCF/VCT 各 0.1s），
+约占全程 3–5%；`--eval-every 0` 关闭。检查点内含优化器动量与 `step`/`iteration`/`games`，
+续训后曲线连续。
 
 自对弈是单核 Python，梯度步阶段 GPU 才满载；`--search-batch` 与线程数不是吞吐参数，
 并行进程才是。每个 CUDA 进程约 230 MB 显存上下文，8 GB 卡在桌面占用约 4 GB 时最多

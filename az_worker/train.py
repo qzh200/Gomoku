@@ -112,10 +112,20 @@ def measure_strength(
     classical_time: float,
     games: int,
     seed: int,
+    vcf_budget: float = 0.1,
+    vct_budget: float = 0.1,
 ):
     from .arena import az_side, classical_side, play_series
 
-    candidate = az_side(str(model_path), str(device), simulations, None, 0.0, 0.0, seed=seed)
+    candidate = az_side(
+        str(model_path),
+        str(device),
+        simulations,
+        None,
+        vcf_budget,
+        vct_budget,
+        seed=seed,
+    )
     opponent = classical_side(classical_depth, 12, classical_time)
     return play_series(candidate, opponent, games, 2, seed)
 
@@ -210,7 +220,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="每隔多少轮跟传统引擎打几局做棋力探针，0 关闭",
     )
     parser.add_argument("--eval-games", type=int, default=4, help="探针局数")
-    parser.add_argument("--eval-simulations", type=int, default=64, help="探针每手模拟数")
+    parser.add_argument("--eval-simulations", type=int, default=128, help="探针每手模拟数")
+    parser.add_argument("--eval-vcf", type=float, default=0.1, help="探针每手 VCF 预算")
+    parser.add_argument("--eval-vct", type=float, default=0.1, help="探针每手 VCT 预算")
     parser.add_argument("--eval-classical-depth", type=int, default=2, help="探针对手深度")
     parser.add_argument("--eval-classical-time", type=float, default=0.05, help="探针对手每手秒数")
     parser.add_argument(
@@ -468,6 +480,8 @@ def main(argv: list[str] | None = None) -> int:
                     args.eval_classical_time,
                     args.eval_games,
                     iteration,
+                    args.eval_vcf,
+                    args.eval_vct,
                 )
                 eval_winrate = f"{probe.winrate:.3f}"
                 print(
