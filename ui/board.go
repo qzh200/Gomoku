@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	boardGutter  = 20.0
+	boardGutter  = 22.0
 	boardMinSize = 420.0
 	boardMaxSize = 1000.0
 	boardRadius  = 10.0
-	labelSize    = 11.0
+	labelSize    = 12.0
 	stoneRatio   = 0.42
 	starRatio    = 0.10
 	shadowOffset = 1.5
@@ -255,9 +255,7 @@ func (b *BoardView) paintWinningLine(p *mygo.Painter, r mygo.Rect, geo geometry)
 func (b *BoardView) paintLastMove(p *mygo.Painter, r mygo.Rect, geo geometry, row, col int) {
 	cx := r.X + geo.OriginX + float32(col)*geo.Cell
 	cy := r.Y + geo.OriginY + float32(row)*geo.Cell
-	radius := geo.Cell * 0.16
-	p.FillPath((&mygo.Path{}).Circle(cx, cy, radius*1.7), mygo.RGB(255, 255, 255).Alpha(0.75))
-	p.FillPath((&mygo.Path{}).Circle(cx, cy, radius), b.accent)
+	p.FillPath((&mygo.Path{}).Circle(cx, cy, geo.Cell*0.19), b.accent)
 }
 
 func (b *BoardView) paintStone(p *mygo.Painter, r mygo.Rect, geo geometry, row, col, cell int, ghost bool) {

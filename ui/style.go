@@ -75,13 +75,13 @@ func panel(c *mygo.Context) mygo.Element {
 // groupLabel is the small muted heading above a group of controls.
 func groupLabel(c *mygo.Context, text string) {
 	p := paletteOf(theme.TokensOf(c))
-	mygo.Text(c, text).FontSize(12).FontWeight(600).TextColor(p.muted).LetterSpacing(0.2)
+	mygo.Text(c, text).FontSize(14).FontWeight(600).TextColor(p.muted).LetterSpacing(0.2)
 }
 
 // fieldLabel names an individual control.
 func fieldLabel(c *mygo.Context, text string) {
 	p := paletteOf(theme.TokensOf(c))
-	mygo.Text(c, text).FontSize(11).FontWeight(500).TextColor(p.faint)
+	mygo.Text(c, text).FontSize(13).FontWeight(500).TextColor(p.faint)
 }
 
 // segmented is the pill switch of the reference: a soft track whose chosen
@@ -89,14 +89,14 @@ func fieldLabel(c *mygo.Context, text string) {
 func segmented(c *mygo.Context, selected *int, options []string) {
 	p := paletteOf(theme.TokensOf(c))
 	parts := mygo.SegmentedBase(c, selected, len(options))
-	track := parts.Track.Height(32).Padding(3).Gap(3).Radius(controlRad).
+	track := parts.Track.Height(38).Padding(3).Gap(3).Radius(controlRad).
 		Background(p.surfaceAlt).AlignSelf(mygo.Stretch)
 	if selected == nil {
 		return
 	}
 	track.Children(func() {
 		for i, option := range options {
-			seg := parts.Segment(i).Height(26).PaddingX(9).Radius(7).
+			seg := parts.Segment(i).Height(32).PaddingX(6).Radius(8).
 				Cursor(mygo.CursorPointer).Grow(1).Basis(0)
 			switch {
 			case i == *selected:
@@ -108,7 +108,7 @@ func segmented(c *mygo.Context, selected *int, options []string) {
 				seg.TextColor(p.muted)
 			}
 			seg.Children(func() {
-				mygo.Text(c, option).FontSize(12).FontWeight(500).SingleLine()
+				mygo.Text(c, option).FontSize(14).FontWeight(500).SingleLine()
 			})
 		}
 	})
@@ -117,7 +117,7 @@ func segmented(c *mygo.Context, selected *int, options []string) {
 // primaryButton is the filled accent call to action.
 func primaryButton(c *mygo.Context, icon *mygo.SVG, label string) mygo.Element {
 	p := paletteOf(theme.TokensOf(c))
-	b := mygo.ButtonBase(c).Height(36).PaddingX(14).Radius(controlRad).Cursor(mygo.CursorPointer)
+	b := mygo.ButtonBase(c).Height(42).PaddingX(16).Radius(controlRad).Cursor(mygo.CursorPointer)
 	bg := p.accent
 	if b.Hovered() {
 		bg = p.accent.Mix(mygo.RGB(255, 255, 255), 0.12)
@@ -135,7 +135,7 @@ func primaryButton(c *mygo.Context, icon *mygo.SVG, label string) mygo.Element {
 // ghostButton is the bordered card-colored secondary action.
 func ghostButton(c *mygo.Context, icon *mygo.SVG, label string) mygo.Element {
 	p := paletteOf(theme.TokensOf(c))
-	b := mygo.ButtonBase(c).Height(34).PaddingX(12).Radius(controlRad).Cursor(mygo.CursorPointer)
+	b := mygo.ButtonBase(c).Height(40).PaddingX(14).Radius(controlRad).Cursor(mygo.CursorPointer)
 	line := p.border
 	if b.Hovered() {
 		line = p.borderStrong
@@ -150,17 +150,17 @@ func ghostButton(c *mygo.Context, icon *mygo.SVG, label string) mygo.Element {
 func buttonContent(c *mygo.Context, icon *mygo.SVG, label string, color mygo.Color) {
 	mygo.Row(c).Gap(7).AlignItems(mygo.Center).Children(func() {
 		display.Icon(c, icon, display.IconProps{Size: display.IconSmall})
-		mygo.Text(c, label).FontSize(13).FontWeight(600).TextColor(color).SingleLine()
+		mygo.Text(c, label).FontSize(15).FontWeight(600).TextColor(color).SingleLine()
 	})
 }
 
 // chip is a soft pill with a colored status dot.
 func chip(c *mygo.Context, text string, dot mygo.Color) {
 	p := paletteOf(theme.TokensOf(c))
-	mygo.Row(c).Gap(8).Height(28).Padding(0, 11).Radius(14).
+	mygo.Row(c).Gap(8).Height(32).Padding(0, 12).Radius(16).
 		Background(p.surface).Border(1, p.border).AlignItems(mygo.Center).Children(func() {
 		mygo.Box(c).Size(6, 6).Radius(3).Background(dot).Shrink(0)
-		mygo.Text(c, text).FontSize(12).FontWeight(500).TextColor(p.text).SingleLine()
+		mygo.Text(c, text).FontSize(14).FontWeight(500).TextColor(p.text).SingleLine()
 	})
 }
 
@@ -170,7 +170,7 @@ func noticeRow(c *mygo.Context, icon *mygo.SVG, text string, color mygo.Color) {
 	row.Background(color.Alpha(0.10)).Border(1, color.Alpha(0.24)).TextColor(color)
 	row.Children(func() {
 		display.Icon(c, icon, display.IconProps{Size: display.IconSmall})
-		mygo.Text(c, text).FontSize(12).FontWeight(500).TextColor(color)
+		mygo.Text(c, text).FontSize(14).FontWeight(500).TextColor(color)
 	})
 }
 
@@ -178,7 +178,7 @@ func noticeRow(c *mygo.Context, icon *mygo.SVG, text string, color mygo.Color) {
 func tinyTag(c *mygo.Context, text string, color mygo.Color) {
 	mygo.Row(c).Padding(2, 8).Radius(999).Background(color.Alpha(0.12)).
 		Border(1, color.Alpha(0.25)).Children(func() {
-		mygo.Text(c, text).FontSize(11).FontWeight(600).TextColor(color).SingleLine()
+		mygo.Text(c, text).FontSize(13).FontWeight(600).TextColor(color).SingleLine()
 	})
 }
 
@@ -202,7 +202,7 @@ func emptyHint(c *mygo.Context, text string) {
 	p := paletteOf(theme.TokensOf(c))
 	box := mygo.Box(c).Padding(14, 12).Radius(9).Border(1, p.border).AlignItems(mygo.Center)
 	box.Children(func() {
-		mygo.Text(c, text).FontSize(12).TextColor(p.faint)
+		mygo.Text(c, text).FontSize(14).TextColor(p.faint)
 	})
 }
 

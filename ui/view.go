@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sync"
 
 	mygo "github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -10,26 +11,27 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
+	"mygo/assets"
 	"mygo/internal/domain/gomoku"
 )
 
 const (
-	sidebarWidth  = 284.0
-	historyWidth  = 248.0
+	sidebarWidth  = 296.0
+	historyWidth  = 256.0
 	pagePadding   = 16.0
 	columnGap     = 16.0
-	toolbarHeight = 48.0
+	toolbarHeight = 56.0
 	boardPadding  = 12.0
 )
 
 const (
 	historyColumnGap   = 8.0
-	historyNumberWidth = 32.0
-	historyPlayerWidth = 60.0
-	historyPlaceWidth  = 44.0
+	historyNumberWidth = 38.0
+	historyPlayerWidth = 70.0
+	historyPlaceWidth  = 52.0
 )
 
-var modeNames = []string{"人机对战", "AI 对战", "人人对战"}
+var modeNames = []string{"人机对战", "AI 对战", "玩家对战"}
 
 var modeValues = []gomoku.Mode{gomoku.ModeHumanVsAI, gomoku.ModeAIVsAI, gomoku.ModeHumanVsHuman}
 
@@ -55,28 +57,26 @@ func (a *App) build(c *mygo.Context) {
 	})
 }
 
+var (
+	iconOnce sync.Once
+	iconSrc  mygo.ImageSource
+)
+
 func brandMark(c *mygo.Context) {
-	p := paletteOf(theme.TokensOf(c))
-	mark := mygo.Box(c).Size(26, 26).Radius(7).Shrink(0).Background(p.accent)
-	mark.Draw(func(painter *mygo.Painter, r mygo.Rect) {
-		cx, cy := r.X+r.W/2, r.Y+r.H/2
-		for i := float32(-1); i <= 1; i++ {
-			painter.Line(cx+i*5.5, r.Y+7, cx+i*5.5, r.Y+r.H-7, 1, mygo.RGB(255, 255, 255).Alpha(0.30))
-			painter.Line(r.X+7, cy+i*5.5, r.X+r.W-7, cy+i*5.5, 1, mygo.RGB(255, 255, 255).Alpha(0.30))
-		}
-		painter.FillPath((&mygo.Path{}).Circle(cx-5, cy-5, 2.4), mygo.RGB(255, 255, 255))
-		painter.FillPath((&mygo.Path{}).Circle(cx+5, cy+5, 2.4), mygo.RGB(255, 255, 255).Alpha(0.75))
+	iconOnce.Do(func() {
+		iconSrc, _ = mygo.DecodeImage(assets.IconPNG)
 	})
+	if iconSrc == nil {
+		return
+	}
+	mygo.Image(c, iconSrc).Size(30, 30).Shrink(0).Fit(mygo.Contain)
 }
 
 func (a *App) buildToolbar(c *mygo.Context, tk *theme.Tokens) {
 	p := paletteOf(tk)
-	mygo.Row(c).Height(toolbarHeight).Padding(0, pagePadding).Gap(10).AlignItems(mygo.Center).Children(func() {
+	mygo.Row(c).Height(toolbarHeight).Padding(0, pagePadding).Gap(12).AlignItems(mygo.Center).Children(func() {
 		brandMark(c)
-		mygo.Column(c).Gap(1).Children(func() {
-			mygo.Text(c, "Gomoku").FontSize(15).FontWeight(700).TextColor(p.text)
-			mygo.Text(c, "15 × 15 · 五子连珠").FontSize(11).TextColor(p.faint)
-		})
+		mygo.Text(c, "Gomoku").FontSize(19).FontWeight(700).TextColor(p.text)
 		mygo.Spacer(c).Grow(1).Basis(0)
 		a.buildThinking(c)
 		a.buildStatus(c, tk)
@@ -93,7 +93,7 @@ func (a *App) buildThinking(c *mygo.Context) {
 	}
 	mygo.Row(c).Gap(6).AlignItems(mygo.Center).Children(func() {
 		display.Icon(c, lucide.LoaderCircle(), display.IconProps{Size: display.IconSmall, Spin: true})
-		mygo.Text(c, "AI 思考中").FontSize(12).FontWeight(500).TextColor(p.accent)
+		mygo.Text(c, "AI 思考中").FontSize(14).FontWeight(500).TextColor(p.accent)
 	})
 }
 
@@ -111,7 +111,7 @@ func (a *App) buildStatus(c *mygo.Context, tk *theme.Tokens) {
 		return
 	}
 	if game == nil {
-		mygo.Text(c, "选择模式并开始一局新棋").FontSize(12).TextColor(p.faint)
+		mygo.Text(c, "选择模式并开始一局新棋").FontSize(14).TextColor(p.faint)
 		return
 	}
 	dot := p.accent
@@ -193,8 +193,8 @@ func (a *App) buildReplayRow(c *mygo.Context, game *gomoku.Game, tk *theme.Token
 	}
 	row.Children(func() {
 		mygo.Column(c).Gap(2).Children(func() {
-			mygo.Text(c, modeLabel(game.Mode)).FontSize(12).FontWeight(500).TextColor(p.text)
-			mygo.Text(c, replaySummary(game)).FontSize(11).TextColor(p.faint)
+			mygo.Text(c, modeLabel(game.Mode)).FontSize(14).FontWeight(500).TextColor(p.text)
+			mygo.Text(c, replaySummary(game)).FontSize(13).TextColor(p.faint)
 		})
 		mygo.Spacer(c).Grow(1).Basis(0)
 		label, color := replayResult(game)
@@ -259,7 +259,7 @@ func (a *App) buildSingleEnginePicker(c *mygo.Context, label string, current fun
 	fieldLabel(c, label)
 	names := a.engineNames()
 	if len(names) == 0 {
-		mygo.Text(c, "没有可用引擎").FontSize(12).TextColor(paletteOf(theme.TokensOf(c)).danger)
+		mygo.Text(c, "没有可用引擎").FontSize(14).TextColor(paletteOf(theme.TokensOf(c)).danger)
 		return
 	}
 	index := current() % len(names)
@@ -270,7 +270,7 @@ func (a *App) buildSingleEnginePicker(c *mygo.Context, label string, current fun
 func (a *App) buildAIEnginePickers(c *mygo.Context) {
 	names := a.engineNames()
 	if len(names) == 0 {
-		mygo.Text(c, "没有可用引擎").FontSize(12).TextColor(paletteOf(theme.TokensOf(c)).danger)
+		mygo.Text(c, "没有可用引擎").FontSize(14).TextColor(paletteOf(theme.TokensOf(c)).danger)
 		return
 	}
 	a.mu.Lock()
@@ -385,7 +385,7 @@ func (a *App) buildResult(c *mygo.Context) {
 
 func iconButton(c *mygo.Context, icon *mygo.SVG, label string) mygo.Element {
 	p := paletteOf(theme.TokensOf(c))
-	button := mygo.ButtonBase(c).Height(28).PaddingX(9).Radius(7).
+	button := mygo.ButtonBase(c).Height(34).PaddingX(10).Radius(8).
 		Background(p.surface).Border(1, p.border).Cursor(mygo.CursorPointer)
 	if button.Hovered() {
 		button.Border(1, p.borderStrong)
@@ -393,7 +393,7 @@ func iconButton(c *mygo.Context, icon *mygo.SVG, label string) mygo.Element {
 	button.Children(func() {
 		mygo.Row(c).Gap(5).AlignItems(mygo.Center).Children(func() {
 			display.Icon(c, icon, display.IconProps{Size: display.IconSmall})
-			mygo.Text(c, label).FontSize(12).TextColor(p.muted)
+			mygo.Text(c, label).FontSize(14).TextColor(p.muted)
 		})
 	})
 	return button
@@ -443,9 +443,9 @@ func (a *App) buildInfoRow(c *mygo.Context, icon *mygo.SVG, label, value string)
 	p := paletteOf(theme.TokensOf(c))
 	mygo.Row(c).Gap(8).AlignItems(mygo.Center).TextColor(p.faint).Children(func() {
 		display.Icon(c, icon, display.IconProps{Size: display.IconSmall})
-		mygo.Text(c, label).FontSize(12).TextColor(p.muted)
+		mygo.Text(c, label).FontSize(14).TextColor(p.muted)
 		mygo.Spacer(c).Grow(1).Basis(0)
-		mygo.Text(c, value).FontSize(12).FontWeight(500).TextColor(p.text)
+		mygo.Text(c, value).FontSize(14).FontWeight(500).TextColor(p.text)
 	})
 }
 
@@ -554,7 +554,7 @@ func (a *App) buildReviewControls(c *mygo.Context, step, total int) {
 			a.stepReview(-1)
 		}
 		mygo.Text(c, fmt.Sprintf("%d/%d", step, total)).
-			FontSize(11).FontWeight(600).TextColor(p.accent)
+			FontSize(13).FontWeight(600).TextColor(p.accent)
 		next := iconButton(c, lucide.ChevronRight(), "下一手")
 		if next.Clicked() {
 			a.stepReview(1)
@@ -566,9 +566,9 @@ func (a *App) buildHistoryHeader(c *mygo.Context) {
 	p := paletteOf(theme.TokensOf(c))
 	mygo.Column(c).Gap(6).Children(func() {
 		mygo.Row(c).Gap(historyColumnGap).AlignItems(mygo.Center).Padding(0, 6).Children(func() {
-			historyCell(c, historyNumberWidth, "序号", p.faint, 11, 500)
-			historyCell(c, historyPlayerWidth, "棋手", p.faint, 11, 500)
-			historyCell(c, historyPlaceWidth, "位置", p.faint, 11, 500)
+			historyCell(c, historyNumberWidth, "序号", p.faint, 13, 600)
+			historyCell(c, historyPlayerWidth, "棋手", p.faint, 13, 600)
+			historyCell(c, historyPlaceWidth, "位置", p.faint, 13, 600)
 		})
 		mygo.Box(c).Height(1).Background(p.border).AlignSelf(mygo.Stretch)
 	})
@@ -577,13 +577,13 @@ func (a *App) buildHistoryHeader(c *mygo.Context) {
 func (a *App) buildHistoryRow(c *mygo.Context, move gomoku.Move, highlight bool, step int, tk *theme.Tokens) {
 	p := paletteOf(tk)
 	row := mygo.Row(c).Gap(historyColumnGap).AlignItems(mygo.Center).Padding(4, 6).Radius(7).Children(func() {
-		historyCell(c, historyNumberWidth, fmt.Sprintf("%d", move.Number), p.faint, 11, 500)
+		historyCell(c, historyNumberWidth, fmt.Sprintf("%d", move.Number), p.faint, 13, 500)
 		player := mygo.Row(c).Gap(6).AlignItems(mygo.Center).Children(func() {
 			a.buildStoneDot(c, move.Player, tk)
-			mygo.Text(c, playerLabel(move.Player)).FontSize(12).TextColor(p.text)
+			mygo.Text(c, playerLabel(move.Player)).FontSize(14).TextColor(p.text)
 		})
 		player.Width(historyPlayerWidth)
-		historyCell(c, historyPlaceWidth, placeLabel(move.Row, move.Col), p.muted, 12, 500)
+		historyCell(c, historyPlaceWidth, placeLabel(move.Row, move.Col), p.muted, 14, 500)
 	})
 	if step > 0 {
 		row.Cursor(mygo.CursorPointer).OnClick(func() { a.setReviewStep(step) })
@@ -618,7 +618,7 @@ func modeLabel(mode gomoku.Mode) string {
 	case gomoku.ModeHumanVsAI:
 		return "人机对战"
 	case gomoku.ModeHumanVsHuman:
-		return "人人对战"
+		return "玩家对战"
 	}
 	return string(mode)
 }
