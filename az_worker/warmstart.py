@@ -31,6 +31,7 @@ DEFAULT_BLOCKS = 6
 DEFAULT_MODEL = "models/az/warmstart.pt"
 DEFAULT_DATA_OUT = "models/az/teacher_data.pt"
 DEFAULT_BATCH_SIZE = 1024
+DEFAULT_LEARNING_RATE = 1e-3
 DEFAULT_WORKERS = max(1, (os.cpu_count() or 2) - 1)
 
 
@@ -110,6 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--channels", type=int, default=DEFAULT_CHANNELS, help="网络通道数")
     parser.add_argument("--blocks", type=int, default=DEFAULT_BLOCKS, help="残差块数量")
     parser.add_argument("--steps", type=int, default=None, help="训练步数，默认按样本数定")
+    parser.add_argument("--lr", type=float, default=DEFAULT_LEARNING_RATE, help="学习率；续训已有权重时调小")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="每步的样本数")
     parser.add_argument(
         "--workers",
@@ -238,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     steps = args.steps if args.steps is not None else max(1, len(examples) // 32) * 6
     dataset = TensorDataset(device, capacity=len(examples))
     dataset.extend(examples)

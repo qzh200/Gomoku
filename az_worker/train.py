@@ -51,9 +51,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="从已有的 --model 继续，保留回放缓冲区（需要 --buffer-file）",
+        help="读取 --buffer-file 里的回放缓冲区继续训练（权重仍由 --init 决定）",
     )
     parser.add_argument("--buffer-file", default=None, help="回放缓冲区的存档文件")
+    parser.add_argument(
+        "--selfplay-model",
+        default=None,
+        help="用另一个权重产生自对弈样本（数据生成器），默认与 --init 相同；"
+        "进化时用 champion 生成数据、让被训练的网络保持进步",
+    )
     parser.add_argument(
         "--teacher-data",
         default=DEFAULT_TEACHER_DATA,
@@ -104,8 +110,18 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             print(f"没有可用的老师样本: {args.teacher_data}", flush=True)
+    generator_path = Path(args.selfplay_model) if args.selfplay_model else start_path
+    if generator_path == start_path:
+        generator = model
+    elif generator_path.is_file():
+        generator = load_model(str(generator_path), device)
+        print(f"自对弈用权重: {generator_path}", flush=True)
+    else:
+        print(f"找不到自对弈权重: {generator_path}", flush=True)
+        return 1
+
     player = SelfPlay(
-        model,
+        generator,
         device,
         c_puct=args.c_puct,
         simulations=args.simulations,
