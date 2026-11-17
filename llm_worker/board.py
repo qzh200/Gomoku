@@ -90,27 +90,45 @@ def four_makers(
     return open_fours, fours
 
 
+class Threats(NamedTuple):
+    """一方的成五点、活四点、冲四点。有成五点就不必再看四。"""
+
+    fives: list[tuple[int, int]]
+    open_fours: list[tuple[int, int]]
+    fours: list[tuple[int, int]]
+
+
+def threats(board_state: list[list[int]], player: int) -> Threats:
+    fives = five_points(board_state, player)
+    if fives:
+        return Threats(fives, [], [])
+    open_fours, fours = four_makers(board_state, player)
+    return Threats([], open_fours, fours)
+
+
 def describe_threats(board_state: list[list[int]], player: int) -> list[str]:
-    """这一方手里有什么牌：成五点、能成活四的点、能成冲四的点。"""
+    """这一方手里有什么牌。"""
+    return describe(threats(board_state, player), player)
+
+
+def describe(found: Threats, player: int) -> list[str]:
     name = player_name(player)
 
-    fives = five_points(board_state, player)
-    if len(fives) >= 2:
+    if len(found.fives) >= 2:
         return [
-            f"{name}有 {len(fives)} 个成五点 {_spots(fives)}，落一子就成五，堵一个也挡不住。"
+            f"{name}有 {len(found.fives)} 个成五点 {spots(found.fives)}，落一子就成五，堵一个也挡不住。"
         ]
-    if fives:
-        return [f"{name}下在 {_spots(fives)} 就成五。"]
+    if found.fives:
+        return [f"{name}下在 {spots(found.fives)} 就成五。"]
 
     lines: list[str] = []
-    open_fours, fours = four_makers(board_state, player)
-    if open_fours:
+    if found.open_fours:
         lines.append(
-            f"{name}下在 {_spots(open_fours)} 就成活四：之后有两个成五点，挡不住。"
+            f"{name}下在 {spots(found.open_fours)} 就成活四：之后有两个成五点，挡不住。"
         )
-    if fours:
+    if found.fours:
         lines.append(
-            f"{name}下在 {_spots(fours, limit=4)} 就成冲四：只有一个成五点，对手必须去堵。"
+            f"{name}下在 {spots(found.fours, limit=4)} 就成冲四：只有一个成五点，对手必须去堵。"
         )
     return lines
 

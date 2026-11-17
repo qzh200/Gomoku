@@ -243,6 +243,9 @@ class EngineTests(unittest.TestCase):
         engine.choose_move(empty_board(), [], board.BLACK)
         prompt = client.calls[0][1].content
         self.assertIn("- 没有成五、活四或冲四的落点。", prompt)
+        self.assertIn(
+            "这一手：对方下在 (7, 11) 就成五，必须堵这里，下别处下一手就输。", prompt
+        )
 
     def test_asks_again_when_the_cell_is_taken(self) -> None:
         state = empty_board()
