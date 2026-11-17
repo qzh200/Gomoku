@@ -132,7 +132,7 @@ func run(addr string) error {
 			Height:          800,
 			MinWidth:        960,
 			MinHeight:       640,
-			BackgroundColor: "light-dark(#f5f5f5, #17181c)",
+			BackgroundColor: "#0b0d10",
 			Content:         mygoui.View(app.View()),
 		})
 		app.AttachWindow(win)
