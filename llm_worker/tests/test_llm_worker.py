@@ -103,15 +103,12 @@ class SettingsTests(unittest.TestCase):
 
 
 class BoardTests(unittest.TestCase):
-    def test_renders_the_board_with_zero_based_numbers(self) -> None:
+    def test_lists_the_stones_of_one_side(self) -> None:
         state = empty_board()
         state[0][0] = board.BLACK
         state[1][2] = board.WHITE
-        text = board.render_board(state)
-        self.assertIn("行\\列 0 1 2", text)
-        self.assertIn(" 0 X . .", text)
-        self.assertIn(" 1 . . O", text)
-        self.assertIn("14", text)
+        self.assertEqual(board.stone_list(state, board.BLACK), "(0, 0)")
+        self.assertEqual(board.stone_list(state, board.WHITE), "(1, 2)")
 
     def test_parses_a_coordinate_of_the_labels(self) -> None:
         self.assertEqual(board.parse_coordinate("H8"), (7, 7))
@@ -131,11 +128,10 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(board.parse_move('{"move": {"row": 0, "col": 14}}'), (0, 14))
         self.assertIsNone(board.parse_move('{"move": {"row": 15, "col": 0}}'))
 
-    def test_reads_numbers_as_the_labels_of_the_board(self) -> None:
-        self.assertEqual(board.parse_move('{"row": 5, "col": 13}'), (4, 12))
-        self.assertEqual(board.parse_move('{"row": 1, "col": 1}'), (0, 0))
-
+    def test_reads_row_and_col_as_zero_based_numbers(self) -> None:
+        self.assertEqual(board.parse_move('{"row": 5, "col": 13}'), (5, 13))
         self.assertEqual(board.parse_move('{"row": 0, "col": 0}'), (0, 0))
+        self.assertIsNone(board.parse_move('{"row": 15, "col": 0}'))
         self.assertIsNone(board.parse_move('{"row": 16, "col": 16}'))
 
     def test_ignores_the_reasoning_prose(self) -> None:
@@ -168,7 +164,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(len(client.calls), 1)
         system = client.calls[0][0]
         self.assertEqual(system.role, "system")
-        self.assertIn("行\\列 0 1 2", client.calls[0][1].content)
+        self.assertIn("棋盘是 15 行 × 15 列", client.calls[0][1].content)
 
     def test_the_prompt_tells_the_size_the_stones_and_the_last_move(self) -> None:
         state = empty_board()
@@ -187,6 +183,8 @@ class EngineTests(unittest.TestCase):
         self.assertIn("我方（白棋）的棋子坐标：(8, 8)", prompt)
         self.assertIn("对方（黑棋）的棋子坐标：(7, 7)", prompt)
         self.assertIn("最后一手是黑棋，下在 (7, 7)", prompt)
+        self.assertNotIn("行\\列", prompt)
+        self.assertNotIn("必须挡", prompt)
 
     def test_asks_again_when_the_cell_is_taken(self) -> None:
         state = empty_board()

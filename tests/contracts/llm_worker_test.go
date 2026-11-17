@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-var boardLine = regexp.MustCompile(`(?m)^\s*(\d{1,2}) ((?:[.XO] ){14}[.XO])$`)
+var (
+	stonesLine = regexp.MustCompile(`(我方|对方)（(黑棋|白棋)）的棋子坐标：([^\n]*)`)
+	stoneCell  = regexp.MustCompile(`\((\d{1,2}), (\d{1,2})\)`)
+)
 
 func stubOpenAI(t *testing.T) string {
 	t.Helper()
@@ -31,12 +34,12 @@ func stubOpenAI(t *testing.T) string {
 		}
 		prompt := ""
 		for _, message := range payload.Messages {
-			if boardLine.MatchString(message.Content) {
+			if stonesLine.MatchString(message.Content) {
 				prompt = message.Content
 			}
 		}
 		if prompt == "" {
-			http.Error(w, "没有棋盘", http.StatusBadRequest)
+			http.Error(w, "没有棋子坐标", http.StatusBadRequest)
 			return
 		}
 		row, col, ok := stubMove(prompt)
@@ -64,20 +67,27 @@ func stubOpenAI(t *testing.T) string {
 }
 
 func stubMove(prompt string) (int, int, bool) {
-	mark := byte('X')
-	if strings.Contains(prompt, "当前轮到你执白棋") {
-		mark = 'O'
-	}
 	grid := [15][15]byte{}
-	for _, match := range boardLine.FindAllStringSubmatch(prompt, -1) {
-		row := atoi(match[1])
-		if row < 0 || row >= 15 {
-			continue
+	var mark byte
+	for _, match := range stonesLine.FindAllStringSubmatch(prompt, -1) {
+		side, color, cells := match[1], match[2], match[3]
+		stone := byte('X')
+		if color == "白棋" {
+			stone = 'O'
 		}
-		cells := strings.Split(strings.TrimSpace(match[2]), " ")
-		for col, cell := range cells {
-			grid[row][col] = cell[0]
+		if side == "我方" {
+			mark = stone
 		}
+		for _, spot := range stoneCell.FindAllStringSubmatch(cells, -1) {
+			row, col := atoi(spot[1]), atoi(spot[2])
+			if row < 0 || row >= 15 || col < 0 || col >= 15 {
+				continue
+			}
+			grid[row][col] = stone
+		}
+	}
+	if mark == 0 {
+		return -1, -1, false
 	}
 	if row, col, ok := winningCell(grid, mark); ok {
 		return row, col, true
@@ -89,14 +99,14 @@ func stubMove(prompt string) (int, int, bool) {
 	bestRow, bestCol, bestScore := -1, -1, 1<<30
 	for row := range 15 {
 		for col := range 15 {
-			if grid[row][col] != '.' {
+			if grid[row][col] != 0 {
 				continue
 			}
 			nearest := 3
 			for dr := -2; dr <= 2; dr++ {
 				for dc := -2; dc <= 2; dc++ {
 					r, c := row+dr, col+dc
-					if r < 0 || r >= 15 || c < 0 || c >= 15 || grid[r][c] == '.' {
+					if r < 0 || r >= 15 || c < 0 || c >= 15 || grid[r][c] == 0 {
 						continue
 					}
 					if d := max(abs(dr), abs(dc)); d < nearest {
@@ -144,7 +154,7 @@ func winningCell(grid [15][15]byte, mark byte) (int, int, bool) {
 	directions := [][2]int{{0, 1}, {1, 0}, {1, 1}, {1, -1}}
 	for row := range 15 {
 		for col := range 15 {
-			if grid[row][col] != '.' {
+			if grid[row][col] != 0 {
 				continue
 			}
 			for _, d := range directions {
@@ -186,7 +196,7 @@ func extendCell(grid [15][15]byte, mark byte) (int, int, bool) {
 				if length < bestLength {
 					continue
 				}
-				if r >= 0 && r < 15 && c >= 0 && c < 15 && grid[r][c] == '.' {
+				if r >= 0 && r < 15 && c >= 0 && c < 15 && grid[r][c] == 0 {
 					bestLength = length
 					bestRow, bestCol = r, c
 				}

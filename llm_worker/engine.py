@@ -5,22 +5,10 @@ from .openai_client import Answer, ChatMessage, OpenAIClient
 
 
 SYSTEM_PROMPT = (
-    "你是五子棋引擎，棋盘 15×15，黑棋先行，横竖斜连续五子获胜。"
-    "这是一场你必须赢的对局。你的目标是连成五子赢棋，不是只挡住对方——"
-    "只防守赢不了，必须自己造出威胁。\n"
-    "坐标用 (行, 列)，行和列都从 0 数到 14。\n"
-    "按下面的顺序判断这一手，前面的优先级更高：\n"
-    "1. 能直接连成五子，就下那一点，立刻赢。\n"
-    "2. 对方已经四子连成一线时，这一手必须堵住它的延伸端，"
-    "否则对方下一手就五连赢了。\n"
-    "3. 对方有三子连成一线、两头都能接上（活三）时，必须堵住一头，"
-    "否则对方下一手就成活四，你挡不住。\n"
-    "4. 没有紧急威胁就主动进攻：把自己的三子接成四子。"
-    "四子是极强的武器——对方必须来堵，堵完你就再长一子成五连。"
-    "把对手逼着走，比自己闷头下棋更容易赢。\n"
-    "5. 什么都没有的时候，把自己的棋子摆成一条线，"
-    "下在靠近对方棋子、也靠近自己棋子的空点上，别下边角。\n"
-    "永远先问自己「这一手能让我连成五子吗」，再问「对方下一手能赢吗」。"
+    "你是五子棋引擎，黑棋先行，横竖斜连续五子获胜。"
+    "坐标用 (行, 列)，行和列都从 0 数到 14。"
+    "先看自己能不能连成五子，再看对方下一手会不会赢；"
+    "没有紧急威胁就主动把自己的棋子接成四子，别下边角。"
     '只输出 JSON：{"move": {"row": 7, "col": 7}}，不要输出其他内容。'
 )
 
@@ -53,11 +41,11 @@ class LLMEngine:
     ) -> tuple[int, int]:
         if board.fallback_cell(board_state) is None:
             raise EngineError("棋盘已满，没有可落子的位置")
-        messages = self._messages(board_state, history, player, last_move, config)
+        messages = self._messages(board_state, player, last_move)
         problem = ""
         for _ in range(self.max_attempts):
             answer = self.client.complete(messages)
-            move = self._move_of(answer, board_state)
+            move = self._move_of(answer)
             if move is None:
                 problem = FORMAT_HINT
             else:
@@ -79,7 +67,7 @@ class LLMEngine:
         )
         return fallback
 
-    def _move_of(self, answer: "Answer", board_state: list[list[int]]) -> tuple[int, int] | None:
+    def _move_of(self, answer: "Answer") -> tuple[int, int] | None:
         if answer.from_reasoning:
             return board.parse_move_strict(answer.text)
         return board.parse_move(answer.text)
@@ -87,26 +75,17 @@ class LLMEngine:
     def _messages(
         self,
         board_state: list[list[int]],
-        history: list[dict],
         player: int,
         last_move: dict | None,
-        config: dict | None,
     ) -> list[ChatMessage]:
         opponent = board.opponent_of(player)
         lines = [
             f"棋盘是 {board.BOARD_SIZE} 行 × {board.BOARD_SIZE} 列，"
-            "行号和列号都从 0 数到 14。",
-            "",
-            "当前棋盘（行号在前，每行 15 个格子，空格是 .，X 是黑棋，O 是白棋）：",
-            board.render_board(board_state),
-            "",
+            f"行号和列号都从 0 数到 {board.BOARD_SIZE - 1}。",
             f"我方（{board.player_name(player)}）的棋子坐标："
             + board.stone_list(board_state, player),
             f"对方（{board.player_name(opponent)}）的棋子坐标："
             + board.stone_list(board_state, opponent),
-            "",
-            board.describe_lines(board_state, player),
-            board.describe_lines(board_state, opponent),
         ]
         if last_move:
             side = board.player_name(last_move["player"])
@@ -115,127 +94,11 @@ class LLMEngine:
             )
         else:
             lines.append("这是第一手。")
-        if history:
-            lines.append("")
-            lines.append("落子历史：")
-            lines.append(board.render_history(history))
-        lines.append(f"当前轮到你执{board.player_name(player)}。")
-        if config:
-            lines.append("")
-            lines.append("引擎参数：" + str(config))
-        lines.append("")
-        lines.append("这一手的选择：")
-        lines.append(self._plan(board_state, player, opponent))
-        lines.append("")
         lines.append(
-            "请选一个空点落子，回答格式："
-            '{"move": {"row": 行号, "col": 列号}}，例如 {"move": {"row": 7, "col": 7}}。'
+            "请给一个空点落子，只输出 "
+            '{"move": {"row": 行号, "col": 列号}}。'
         )
         return [
             ChatMessage("system", SYSTEM_PROMPT),
             ChatMessage("user", "\n".join(lines)),
         ]
-
-    def _plan(
-        self, board_state: list[list[int]], player: int, opponent: int
-    ) -> str:
-        """把这一手的关键选择写成文字：先说赢棋点，再说挡点，最后说进攻点。"""
-        notes: list[str] = []
-
-        wins = self._winning_cells(board_state, player)
-        if wins:
-            notes.append(
-                "1. 你现在就能连成五子获胜，直接下在 "
-                + "、".join(f"({r}, {c})" for r, c in wins)
-                + "。"
-            )
-
-        blocks = self._must_block(board_state, opponent)
-        if blocks:
-            notes.append(
-                "2. 【必须挡这里】对方下一手就能连成五子，"
-                "这一手只能下在 "
-                + "、".join(f"({r}, {c})" for r, c in blocks)
-                + "，下别的地方你马上就输。"
-            )
-
-        threats = self._open_threes(board_state, opponent)
-        if threats:
-            notes.append(
-                "3. 对方有三子连成一线而且两头都能接上（活三），"
-                "只堵一头挡不住，你必须下在 "
-                + "、".join(f"({r}, {c})" for r, c in threats)
-                + " 里的一个，或者抢先连成四子。"
-            )
-
-        attacks = self._attack_cells(board_state, player)
-        if attacks:
-            notes.append(
-                "4. 【首选进攻点】在这里落子能把你的棋子接成四子，抢占主动："
-                + "、".join(f"({r}, {c})" for r, c in attacks)
-                + "。对方必须来堵，堵完你就再长一子成五连。"
-            )
-
-        builds = self._build_cells(board_state, player)
-        if builds:
-            notes.append(
-                "5. 【扩展点】在这里落子能把你的棋子接得更长："
-                + "、".join(f"({r}, {c})" for r, c in builds[:8])
-                + "。优先选这些点，别让棋子散开。"
-            )
-
-        if not notes:
-            notes.append(
-                "目前没有紧急威胁。选一个靠近对方棋子、也靠近自己棋子的空点，"
-                "把自己的棋子摆成一条线，不要下在边角空地。"
-            )
-        return "\n".join(notes)
-
-    def _winning_cells(
-        self, board_state: list[list[int]], player: int
-    ) -> list[tuple[int, int]]:
-        cells = []
-        for run, free in board.connected_lines(board_state, player, 4):
-            if len(run) == 4:
-                cells.extend(free)
-        return cells
-
-    def _must_block(
-        self, board_state: list[list[int]], opponent: int
-    ) -> list[tuple[int, int]]:
-        cells = []
-        for run, free in board.connected_lines(board_state, opponent, 4):
-            if len(run) == 4:
-                cells.extend(free)
-        return cells
-
-    def _open_threes(
-        self, board_state: list[list[int]], opponent: int
-    ) -> list[tuple[int, int]]:
-        cells = []
-        for run, free in board.connected_lines(board_state, opponent, 3):
-            if len(run) == 3 and len(free) == 2:
-                cells.extend(free)
-        return cells
-
-    def _attack_cells(
-        self, board_state: list[list[int]], player: int
-    ) -> list[tuple[int, int]]:
-        cells = []
-        for run, free in board.connected_lines(board_state, player, 3):
-            if len(run) == 3:
-                cells.extend(free)
-        return cells
-
-    def _build_cells(
-        self, board_state: list[list[int]], player: int
-    ) -> list[tuple[int, int]]:
-        """能把我的棋子接得更长的落点。接得越长的排越前。"""
-        scored: dict[tuple[int, int], int] = {}
-        for run, free in board.connected_lines(board_state, player, 1):
-            for cell in free:
-                scored[cell] = max(scored.get(cell, 0), len(run))
-        for run, free in board.connected_lines(board_state, player, 2):
-            for cell in free:
-                scored[cell] = max(scored.get(cell, 0), len(run))
-        return [cell for cell, _ in sorted(scored.items(), key=lambda item: -item[1])]
