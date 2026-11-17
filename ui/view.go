@@ -17,10 +17,10 @@ import (
 const (
 	sidebarWidth  = 284.0
 	historyWidth  = 248.0
-	pagePadding   = 20.0
+	pagePadding   = 16.0
 	columnGap     = 16.0
-	toolbarHeight = 56.0
-	cardPadding   = 16.0
+	toolbarHeight = 48.0
+	boardPadding  = 12.0
 )
 
 const (
@@ -434,7 +434,7 @@ func (a *App) buildBoardArea(c *mygo.Context, tk *theme.Tokens) {
 	}
 
 	card := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Grow(1).Basis(0).
-		Padding(16).Radius(tk.BorderRadiusLG)
+		Padding(boardPadding).Radius(tk.BorderRadiusLG)
 	card.Children(func() {
 		mygo.Box(c).Grow(1).Basis(0).Center().Children(func() {
 			a.board.View(c, a.boardSize(c))
@@ -448,8 +448,8 @@ func (a *App) boardSize(c *mygo.Context) float32 {
 }
 
 func boardSizeFor(width, height float32) float32 {
-	horizontal := width - sidebarWidth - historyWidth - 2*columnGap - 2*pagePadding - 2*cardPadding
-	vertical := height - toolbarHeight - 2*pagePadding - 2*cardPadding
+	horizontal := width - sidebarWidth - historyWidth - 2*columnGap - 2*pagePadding - 2*boardPadding
+	vertical := height - toolbarHeight - 2*pagePadding - 2*boardPadding
 	size := horizontal
 	if vertical > 0 && vertical < size {
 		size = vertical

@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	boardGutter  = 24.0
+	boardGutter  = 20.0
 	boardMinSize = 420.0
-	boardMaxSize = 760.0
+	boardMaxSize = 1000.0
 	boardRadius  = 10.0
 	labelSize    = 11.0
 	stoneRatio   = 0.42
@@ -131,7 +131,8 @@ func geometryOf(size float32) geometry {
 }
 
 func (b *BoardView) cellAt(geo geometry, x, y float32) (int, int) {
-	if x < 0 || y < 0 || x > geo.Size || y > geo.Size {
+	inner := geo.Size - geo.OriginX
+	if x < geo.OriginX || y < geo.OriginY || x > inner || y > inner {
 		return -1, -1
 	}
 	col := int(math.Round(float64((x - geo.OriginX) / geo.Cell)))
