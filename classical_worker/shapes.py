@@ -14,8 +14,6 @@ OPEN_FOUR = "open_four"
 CLOSED_FOUR = "closed_four"
 OPEN_THREE = "open_three"
 
-_LABELS = {OPEN_FOUR: "活四", CLOSED_FOUR: "冲四", OPEN_THREE: "活三"}
-
 _OWN = 1
 _EMPTY = 0
 _OTHER = 2
@@ -27,12 +25,7 @@ class Threat:
     stones: frozenset[Cell]
     points: tuple[Cell, ...]
     blocks: tuple[Cell, ...]
-    line: Line
     extensions: tuple[tuple[Cell, tuple[Cell, ...]], ...] = ()
-
-    @property
-    def label(self) -> str:
-        return _LABELS[self.kind]
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,7 +156,6 @@ def _fours(line: Line, values: list[int]) -> list[Threat]:
                 frozenset(line[index] for index in stones),
                 cells,
                 () if kind == OPEN_FOUR else cells,
-                line,
             )
         )
     return threats
@@ -182,7 +174,6 @@ def _threes(line: Line, values: list[int]) -> list[Threat]:
                 frozenset(line[index] for index in stones),
                 points,
                 tuple(sorted(line[index] for index in blocks)),
-                line,
                 tuple(
                     (line[extension], tuple(line[index] for index in ends))
                     for extension, ends in sorted(extensions.items())

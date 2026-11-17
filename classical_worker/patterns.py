@@ -4,7 +4,6 @@ from __future__ import annotations
 EMPTY = 0
 BLACK = 1
 WHITE = 2
-BLOCKED = 2
 
 
 WINDOW = 6
@@ -12,7 +11,6 @@ POW3 = (1, 3, 9, 27, 81, 243)
 
 
 FIVE_WINDOW = 5
-OPEN_FOUR_PATTERN = "011110"
 OPEN_THREE_PATTERNS = ("011100", "001110", "010110", "011010")
 OPEN_THREE_EXTENSION = {"011100": 4, "001110": 1, "010110": 2, "011010": 3}
 
@@ -27,13 +25,6 @@ SHAPES: tuple[tuple[str, tuple[str, ...], int], ...] = (
     ("closed_two", ("001120", "021100"), 50),
     ("one", ("001000",), 2),
 )
-
-
-def encode(cells: list[int] | tuple[int, ...]) -> int:
-    code = 0
-    for index, value in enumerate(cells):
-        code += value * POW3[index]
-    return code
 
 
 def decode(code: int, length: int = WINDOW) -> list[int]:
@@ -66,7 +57,3 @@ def _build_tables() -> tuple[tuple[int, int], ...]:
 
 
 WINDOW_SCORES = _build_tables()
-
-
-def window_score(code: int, player: int) -> int:
-    return WINDOW_SCORES[code][player - 1]

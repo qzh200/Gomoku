@@ -16,9 +16,6 @@ WHITE = 2
 DIRECTIONS = ((0, 1), (1, 0), (1, 1), (1, -1))
 
 
-WIN_SCORE = 10_000_000
-
-
 _RANDOM = random.Random(0xC0FFEE)
 ZOBRIST = tuple(
     tuple(_RANDOM.getrandbits(64) for _ in range(BOARD_SIZE * BOARD_SIZE))

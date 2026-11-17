@@ -30,7 +30,6 @@ class TranspositionTable:
         self.max_entries = max(1024, max_entries)
         self.table: dict[int, Entry] = {}
         self.age = 0
-        self.probes = 0
         self.hits = 0
 
     def new_generation(self) -> None:
@@ -38,14 +37,7 @@ class TranspositionTable:
         if len(self.table) > self.max_entries:
             self.table.clear()
 
-    def clear(self) -> None:
-        self.table.clear()
-        self.age = 0
-        self.probes = 0
-        self.hits = 0
-
     def probe(self, key: int) -> Entry | None:
-        self.probes += 1
         entry = self.table.get(key)
         if entry is not None:
             self.hits += 1
