@@ -275,12 +275,15 @@ const replayLimit = 12
 
 func (a *App) refreshReplay() {
 	games := a.games.List()
-	recent := make([]*gomoku.Game, 0, len(games))
-	for i := len(games) - 1; i >= 0 && len(recent) < replayLimit; i-- {
-		recent = append(recent, games[i])
+	finished := make([]*gomoku.Game, 0, len(games))
+	for i := len(games) - 1; i >= 0 && len(finished) < replayLimit; i-- {
+		if games[i].Status != gomoku.StatusFinished {
+			continue
+		}
+		finished = append(finished, games[i])
 	}
 	a.mu.Lock()
-	a.st.replayGames = recent
+	a.st.replayGames = finished
 	a.mu.Unlock()
 }
 

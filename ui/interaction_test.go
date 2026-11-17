@@ -190,11 +190,20 @@ func TestReplayRewindsAPastGame(t *testing.T) {
 	app := newTestApp(t)
 	app.st.modeIndex = 2
 	app.newGame()
-	for _, move := range [][2]int{{7, 7}, {7, 8}, {6, 6}, {8, 8}} {
+	for _, move := range [][2]int{{7, 7}, {7, 8}, {6, 6}, {8, 8}, {5, 5}, {5, 6}, {4, 4}, {4, 5}, {3, 3}} {
 		app.pick(move[0], move[1])
 	}
 	past := app.games.List()[0]
 	app.newGame()
+
+	app.mu.Lock()
+	for _, game := range app.st.replayGames {
+		if game.Status != gomoku.StatusFinished {
+			app.mu.Unlock()
+			t.Fatalf("回溯列表只能列出已结束的棋局, 实际 %s 仍在进行", game.ID)
+		}
+	}
+	app.mu.Unlock()
 
 	tester := mygoui.NewTester(app.View(), 1180, 800)
 	tester.Advance(200 * time.Millisecond)
@@ -208,11 +217,11 @@ func TestReplayRewindsAPastGame(t *testing.T) {
 
 	app.startReview(past)
 	tester.Frame()
-	if !tester.HasText("回溯 · 第 4 / 4 手") {
+	if !tester.HasText("回溯 · 第 9 / 9 手") {
 		t.Fatalf("回溯必须停在末手, 实际 %v", tester.Texts())
 	}
-	if app.board.Game == nil || app.board.Game.MoveCount != 4 {
-		t.Fatalf("回溯棋盘必须还原 4 手")
+	if app.board.Game == nil || app.board.Game.MoveCount != 9 {
+		t.Fatalf("回溯棋盘必须还原 9 手")
 	}
 
 	app.setReviewStep(1)

@@ -177,32 +177,25 @@ func (a *App) buildReplayRow(c *mygo.Context, game *gomoku.Game, tk *theme.Token
 			display.Text(c, replaySummary(game), display.TextProps{Type: display.TextSecondary, FontSize: 11})
 		})
 		mygo.Spacer(c).Grow(1).Basis(0)
-		if label, color, ok := replayResult(game); ok {
-			display.Tag(c, label, display.TagProps{Color: color, Size: theme.Small, Round: true})
-		}
+		label, color := replayResult(game)
+		display.Tag(c, label, display.TagProps{Color: color, Size: theme.Small, Round: true})
 	})
 }
 
 func replaySummary(game *gomoku.Game) string {
-	if game.Status == gomoku.StatusFinished {
-		return fmt.Sprintf("共 %d 手", game.MoveCount)
-	}
-	return fmt.Sprintf("进行中 · %d 手", game.MoveCount)
+	return fmt.Sprintf("共 %d 手", game.MoveCount)
 }
 
-func replayResult(game *gomoku.Game) (string, display.TagColor, bool) {
-	if game.Status != gomoku.StatusFinished {
-		return "", "", false
-	}
+func replayResult(game *gomoku.Game) (string, display.TagColor) {
 	switch game.Result {
 	case gomoku.ResultBlackWin:
-		return "黑胜", display.TagGray, true
+		return "黑胜", display.TagGray
 	case gomoku.ResultWhiteWin:
-		return "白胜", display.TagBlue, true
+		return "白胜", display.TagBlue
 	case gomoku.ResultDraw:
-		return "平局", display.TagGold, true
+		return "平局", display.TagGold
 	}
-	return "已结束", display.TagGray, true
+	return "已结束", display.TagGray
 }
 
 func (a *App) buildModePicker(c *mygo.Context) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log"
@@ -26,6 +27,9 @@ import (
 )
 
 const defaultAddr = "127.0.0.1:8080"
+
+//go:embed assets/icon.png
+var appIcon []byte
 
 func main() {
 	log.SetFlags(0)
@@ -132,6 +136,9 @@ func run(addr string) error {
 			Content:         mygoui.View(app.View()),
 		})
 		app.AttachWindow(win)
+		if err := win.SetIcon(appIcon); err != nil {
+			log.Printf("设置窗口图标失败: %v", err)
+		}
 		app.StartPolling()
 	})
 
