@@ -110,6 +110,32 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(board.stone_list(state, board.BLACK), "(0, 0)")
         self.assertEqual(board.stone_list(state, board.WHITE), "(1, 2)")
 
+    def test_describes_a_diagonal_three_and_its_ends(self) -> None:
+        state = empty_board()
+        for row, col in ((7, 7), (6, 8), (5, 9)):
+            state[row][col] = board.BLACK
+        text = board.describe_lines(state, board.BLACK)
+        self.assertIn("黑棋连成一线的地方：", text)
+        self.assertIn("(5, 9)-(6, 8)-(7, 7)", text)
+        self.assertIn("3 连", text)
+        self.assertIn("(4, 10)、(8, 6)", text)
+
+    def test_reports_a_line_whose_ends_are_both_blocked(self) -> None:
+        state = empty_board()
+        for col in range(7, 11):
+            state[7][col] = board.WHITE
+        state[7][6] = board.BLACK
+        state[7][11] = board.BLACK
+        self.assertIn("两端都被堵住", board.describe_lines(state, board.WHITE))
+
+    def test_reports_no_line_for_a_loose_position(self) -> None:
+        state = empty_board()
+        state[5][5] = board.BLACK
+        self.assertEqual(
+            board.describe_lines(state, board.BLACK),
+            "黑棋没有连成三子以上的棋子。",
+        )
+
     def test_parses_a_coordinate_of_the_labels(self) -> None:
         self.assertEqual(board.parse_coordinate("H8"), (7, 7))
         self.assertEqual(board.parse_coordinate("h8"), (7, 7))
@@ -185,6 +211,26 @@ class EngineTests(unittest.TestCase):
         self.assertIn("最后一手是黑棋，下在 (7, 7)", prompt)
         self.assertNotIn("行\\列", prompt)
         self.assertNotIn("必须挡", prompt)
+
+    def test_the_prompt_spells_out_the_connected_lines(self) -> None:
+        state = empty_board()
+        for row, col in ((7, 7), (6, 8), (5, 9)):
+            state[row][col] = board.BLACK
+        state[7][8] = board.WHITE
+        state[7][9] = board.WHITE
+        state[7][10] = board.WHITE
+        client = FakeClient(['{"move": {"row": 8, "col": 6}}'])
+        engine = LLMEngine(client)
+        engine.choose_move(state, [], board.WHITE, {"row": 5, "col": 9, "player": board.BLACK})
+        prompt = client.calls[0][1].content
+        self.assertIn(
+            "黑棋连成一线的地方：(5, 9)-(6, 8)-(7, 7)（3 连，延伸端：(4, 10)、(8, 6)）。",
+            prompt,
+        )
+        self.assertIn(
+            "白棋连成一线的地方：(7, 8)-(7, 9)-(7, 10)（3 连，延伸端：(7, 11)）。",
+            prompt,
+        )
 
     def test_asks_again_when_the_cell_is_taken(self) -> None:
         state = empty_board()

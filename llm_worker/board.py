@@ -36,6 +36,52 @@ def stone_list(board_state: list[list[int]], player: int) -> str:
     return " ".join(cells) if cells else "（没有棋子）"
 
 
+def connected_lines(
+    board_state: list[list[int]], player: int, minimum: int = 3
+) -> list[tuple[list[tuple[int, int]], list[tuple[int, int]]]]:
+    """找出连成一线的棋子，以及两端的空点。"""
+    found: list[tuple[list[tuple[int, int]], list[tuple[int, int]]]] = []
+    seen: set[tuple] = set()
+    for row in range(BOARD_SIZE):
+        for col in range(BOARD_SIZE):
+            if row >= len(board_state) or col >= len(board_state[row]):
+                continue
+            if board_state[row][col] != player:
+                continue
+            for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
+                if in_bounds(row - dr, col - dc) and board_state[row - dr][col - dc] == player:
+                    continue
+                run = []
+                r, c = row, col
+                while in_bounds(r, c) and board_state[r][c] == player:
+                    run.append((r, c))
+                    r, c = r + dr, c + dc
+                if len(run) < minimum:
+                    continue
+                key = tuple(run)
+                if key in seen:
+                    continue
+                seen.add(key)
+                free = []
+                for er, ec in ((row - dr, col - dc), (r, c)):
+                    if in_bounds(er, ec) and board_state[er][ec] == 0:
+                        free.append((er, ec))
+                found.append((run, free))
+    return found
+
+
+def describe_lines(board_state: list[list[int]], player: int, minimum: int = 3) -> str:
+    """把连成一线的棋子写成文字，模型才读得出斜线。"""
+    parts = []
+    for run, free in connected_lines(board_state, player, minimum):
+        spots = "、".join(f"({r}, {c})" for r, c in free) if free else "两端都被堵住"
+        cells = "-".join(f"({rr}, {cc})" for rr, cc in run)
+        parts.append(f"{cells}（{len(run)} 连，延伸端：{spots}）")
+    if not parts:
+        return f"{player_name(player)}没有连成三子以上的棋子。"
+    return f"{player_name(player)}连成一线的地方：" + "；".join(parts) + "。"
+
+
 def in_bounds(row: int, col: int) -> bool:
     return 0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE
 

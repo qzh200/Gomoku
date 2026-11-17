@@ -86,6 +86,8 @@ class LLMEngine:
             + board.stone_list(board_state, player),
             f"对方（{board.player_name(opponent)}）的棋子坐标："
             + board.stone_list(board_state, opponent),
+            board.describe_lines(board_state, player),
+            board.describe_lines(board_state, opponent),
         ]
         if last_move:
             side = board.player_name(last_move["player"])
