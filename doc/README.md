@@ -31,7 +31,7 @@ flowchart LR
 
 | 引擎 | 目录 | 决策方式 | 是否需要外部服务 | 默认 engine_id |
 | --- | --- | --- | --- | --- |
-| 传统引擎 | `classical_worker/` | 6 格窗口棋型评估 + PVS + 置换表 + VCF/VCT | 否 | `classical` |
+| 传统引擎 | `classical_worker/` | 6 格窗口棋型评估 + PVS + 置换表 + VCF | 否 | `classical` |
 | LLM 引擎 | `llm_worker/` | 把精确棋形与坐标写进 Prompt，解析模型返回的 JSON | 是，OpenAI 兼容接口 | `llm` |
 | AlphaZero 引擎 | `az_worker/` | 9 平面残差网络 + PUCT MCTS，纯自对弈训练 | 否（推理本地） | `az` |
 
@@ -43,7 +43,7 @@ flowchart LR
 | --- | --- |
 | [01-mygo-architecture.md](01-mygo-architecture.md) | 领域模型、应用服务、并发、存储、鉴权、HTTP 路由、启动流程 |
 | [02-worker-protocol.md](02-worker-protocol.md) | Worker 契约、长轮询、租约、幂等、配置与令牌解析、失败处理 |
-| [03-classical-engine.md](03-classical-engine.md) | 窗口棋型、增量评估、威胁表、PVS、置换表、VCF/VCT、参数与基准 |
+| [03-classical-engine.md](03-classical-engine.md) | 窗口棋型、增量评估、威胁表、PVS、置换表、VCF、参数与基准 |
 | [04-llm-engine.md](04-llm-engine.md) | 棋形原语、Prompt 结构、输出解析、重试与兜底、推理模型适配 |
 | [05-az-engine.md](05-az-engine.md) | 9 平面特征、bitboard 威胁、网络、官方 PUCT、纯自对弈训练、VCF/VCT、擂台 |
 | [06-desktop-ui.md](06-desktop-ui.md) | UI 分层、绘制几何、交互、版本冲突重试、复盘、主题 |
