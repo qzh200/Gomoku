@@ -76,7 +76,7 @@ func (a *App) buildToolbar(c *mygo.Context, tk *theme.Tokens) {
 	p := paletteOf(tk)
 	mygo.Row(c).Height(toolbarHeight).Padding(0, pagePadding).Gap(12).AlignItems(mygo.Center).Children(func() {
 		brandMark(c)
-		mygo.Text(c, "Gomoku").FontSize(19).FontWeight(700).TextColor(p.text)
+		mygo.Text(c, "五子棋").FontSize(19).FontWeight(700).TextColor(p.text)
 		mygo.Spacer(c).Grow(1).Basis(0)
 		a.buildThinking(c)
 		a.buildStatus(c, tk)

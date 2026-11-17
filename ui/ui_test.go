@@ -31,8 +31,8 @@ func TestInterfaceDrawsBoardAndCreatesGame(t *testing.T) {
 	tester := mygoui.NewTester(app.View(), 1180, 800)
 	tester.Advance(100 * time.Millisecond)
 
-	if tester.HasText("五子棋") {
-		t.Fatalf("窗口标题栏已显示五子棋, 界面内不应重复: %v", tester.Texts())
+	if !tester.HasText("五子棋") {
+		t.Fatalf("界面左上角必须显示与窗口一致的中文标题, 实际文本: %v", tester.Texts())
 	}
 	if !tester.HasText("开始新棋局") {
 		t.Fatalf("界面必须显示开始按钮, 实际文本: %v", tester.Texts())
