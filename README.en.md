@@ -64,7 +64,7 @@ MyGo is a **local-first** Gomoku (Five-in-a-Row) desktop application. Go owns th
 
 | `engine_id` | Engine | Decision method | Runtime dependency | Best for |
 | --- | --- | --- | --- | --- |
-| `classical` | Classical search | 6-cell window patterns + PVS + transposition table + VCF/VCT | CPU only, no external service | Stable, reproducible tactical play |
+| `classical` | Classical search | 6-cell window patterns + PVS + transposition table + VCF | CPU only, no external service | Stable, reproducible tactical play |
 | `llm` | Large language model | Exact threat text + 0-based coordinate prompt, JSON move parsing | OpenAI-compatible API | Explainable natural-language reasoning, prompt research |
 | `az` | AlphaZero | 7-plane residual network + PUCT MCTS, teacher warm start + self-play + self-evolution | Local PyTorch + weights | Learned positional intuition, long-term strategy |
 
@@ -271,7 +271,7 @@ python -m unittest discover -s llm_worker/tests -t .
 | [`doc/README.md`](doc/README.md) | System overview, engine table, global conventions |
 | [`doc/01-mygo-architecture.md`](doc/01-mygo-architecture.md) | Domain model, application services, concurrency, auth, startup |
 | [`doc/02-worker-protocol.md`](doc/02-worker-protocol.md) | Worker contract, long polling, leases, idempotency, failures |
-| [`doc/03-classical-engine.md`](doc/03-classical-engine.md) | Window patterns, incremental evaluation, threats, PVS, VCF/VCT |
+| [`doc/03-classical-engine.md`](doc/03-classical-engine.md) | Window patterns, incremental evaluation, threats, PVS, VCF |
 | [`doc/04-llm-engine.md`](doc/04-llm-engine.md) | Threat primitives, prompt, parsing, retries, reasoning models |
 | [`doc/05-az-engine.md`](doc/05-az-engine.md) | 9 planes, bitboard threats, network, PUCT, pure self-play training, VCF/VCT, arena |
 | [`doc/06-desktop-ui.md`](doc/06-desktop-ui.md) | UI layers, rendering, interaction, replay, themes |

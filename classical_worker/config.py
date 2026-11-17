@@ -10,9 +10,6 @@ DEFAULT_DEPTH = 8
 DEFAULT_WIDTH = 12
 DEFAULT_TIME_BUDGET = 2.0
 DEFAULT_VCF_BUDGET = 0.10
-
-
-DEFAULT_VCT_BUDGET = 0.0
 DEFAULT_TT_ENTRIES = 200_000
 
 
@@ -20,7 +17,6 @@ ENV_DEPTH = "CLASSICAL_DEPTH"
 ENV_WIDTH = "CLASSICAL_WIDTH"
 ENV_TIME_BUDGET = "CLASSICAL_TIME_BUDGET"
 ENV_VCF_BUDGET = "CLASSICAL_VCF_BUDGET"
-ENV_VCT_BUDGET = "CLASSICAL_VCT_BUDGET"
 ENV_TT_ENTRIES = "CLASSICAL_TT_ENTRIES"
 
 
@@ -34,7 +30,6 @@ class Settings:
     width: int
     time_budget: float
     vcf_budget: float
-    vct_budget: float
     tt_entries: int
 
     @classmethod
@@ -66,6 +61,5 @@ class Settings:
             width=integer(ENV_WIDTH, DEFAULT_WIDTH),
             time_budget=number(ENV_TIME_BUDGET, DEFAULT_TIME_BUDGET),
             vcf_budget=number(ENV_VCF_BUDGET, DEFAULT_VCF_BUDGET),
-            vct_budget=number(ENV_VCT_BUDGET, DEFAULT_VCT_BUDGET),
             tt_entries=integer(ENV_TT_ENTRIES, DEFAULT_TT_ENTRIES),
         )

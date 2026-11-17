@@ -4,6 +4,7 @@ import argparse
 import statistics
 import time
 
+from .config import DEFAULT_DEPTH, DEFAULT_VCF_BUDGET, DEFAULT_WIDTH
 from .position import BLACK, Position, WHITE, other
 from .search import Searcher
 from .tests.fixtures.v1_position import Position as V1Position
@@ -12,13 +13,18 @@ from .tests.fixtures.v1_search import Searcher as V1Searcher
 
 OPENINGS = ((0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1))
 
+# 基准是回归测量，用固定的快档参数；生产默认值只有 depth/width 与 VCF 比例相同。
+BENCHMARK_BUDGET = 0.2
+BENCHMARK_VCF_BUDGET = DEFAULT_VCF_BUDGET
+V1_DEPTH = 6
+V1_WIDTH = 10
+
 
 def play_game(
     v2_black: bool,
     budget: float,
     opening: tuple[int, int],
-    vcf_budget: float = 0.10,
-    vct_budget: float = 0.0,
+    vcf_budget: float = BENCHMARK_VCF_BUDGET,
 ) -> tuple[int, int, list[float], list[int]]:
     position = Position()
     centre = (7, 7)
@@ -30,13 +36,12 @@ def play_game(
         raise AssertionError("the opening stone cannot win")
 
     v2 = Searcher(
-        depth=8,
-        width=12,
+        depth=DEFAULT_DEPTH,
+        width=DEFAULT_WIDTH,
         time_budget=budget,
         vcf_budget=vcf_budget,
-        vct_budget=vct_budget,
     )
-    v1 = V1Searcher(depth=6, width=10, time_budget=budget)
+    v1 = V1Searcher(depth=V1_DEPTH, width=V1_WIDTH, time_budget=budget)
     player = BLACK
     moves = 2
     times: list[float] = []
@@ -62,8 +67,7 @@ def play_game(
 def benchmark(
     games: int,
     budget: float,
-    vcf_budget: float = 0.10,
-    vct_budget: float = 0.0,
+    vcf_budget: float = BENCHMARK_VCF_BUDGET,
 ) -> dict[str, float]:
     wins = 0
     losses = 0
@@ -75,7 +79,7 @@ def benchmark(
         v2_black = game % 2 == 0
         opening = OPENINGS[game % len(OPENINGS)]
         winner, _, game_times, game_depths = play_game(
-            v2_black, budget, opening, vcf_budget, vct_budget
+            v2_black, budget, opening, vcf_budget
         )
         times.extend(game_times)
         depths.extend(game_depths)
@@ -106,15 +110,13 @@ def benchmark(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="第二代传统算法对第一代的自对弈基准")
     parser.add_argument("--games", type=int, default=20)
-    parser.add_argument("--budget", type=float, default=0.05)
-    parser.add_argument("--vcf", type=float, default=0.15)
-    parser.add_argument("--vct", type=float, default=0.0)
+    parser.add_argument("--budget", type=float, default=BENCHMARK_BUDGET)
+    parser.add_argument("--vcf", type=float, default=BENCHMARK_VCF_BUDGET)
     args = parser.parse_args(argv)
     result = benchmark(
         max(1, args.games),
         max(0.01, args.budget),
         max(0.0, args.vcf),
-        max(0.0, args.vct),
     )
     print(f"games      {result['games']}")
     print(f"wins       {result['wins']}")

@@ -64,7 +64,7 @@ MyGo 是一个**本地优先**的五子棋桌面应用。Go 负责唯一权威�
 
 | `engine_id` | 引擎 | 决策方式 | 运行依赖 | 适合 |
 | --- | --- | --- | --- | --- |
-| `classical` | 传统搜索 | 6 格窗口棋型评估 + PVS + 置换表 + VCF/VCT | 纯 CPU，无外部服务 | 稳定、可复现的战术对局 |
+| `classical` | 传统搜索 | 6 格窗口棋型评估 + PVS + 置换表 + VCF | 纯 CPU，无外部服务 | 稳定、可复现的战术对局 |
 | `llm` | 大语言模型 | 精确棋形文字 + 0 基坐标 Prompt，解析 JSON 落子 | OpenAI 兼容 API | 可解释的自然语言推理、Prompt 研究 |
 | `az` | AlphaZero | 9 平面残差网络 + PUCT MCTS，纯自对弈训练（官方方法基线） | 本地 PyTorch + 权重 | 学习型局面直觉、长期策略 |
 
@@ -271,7 +271,7 @@ python -m unittest discover -s llm_worker/tests -t .
 | [`doc/README.md`](doc/README.md) | 系统全貌、引擎总表、全局约定 |
 | [`doc/01-mygo-architecture.md`](doc/01-mygo-architecture.md) | 领域模型、应用服务、并发、鉴权、启动流程 |
 | [`doc/02-worker-protocol.md`](doc/02-worker-protocol.md) | Worker 契约、长轮询、租约、幂等、失败处理 |
-| [`doc/03-classical-engine.md`](doc/03-classical-engine.md) | 窗口棋型、增量评估、威胁表、PVS、VCF/VCT |
+| [`doc/03-classical-engine.md`](doc/03-classical-engine.md) | 窗口棋型、增量评估、威胁表、PVS、VCF |
 | [`doc/04-llm-engine.md`](doc/04-llm-engine.md) | 棋形原语、Prompt、解析、重试、推理模型适配 |
 | [`doc/05-az-engine.md`](doc/05-az-engine.md) | 9 平面特征、bitboard 威胁、网络、PUCT、纯自对弈训练、VCF/VCT、擂台 |
 | [`doc/06-desktop-ui.md`](doc/06-desktop-ui.md) | UI 分层、绘制、交互、复盘、主题 |

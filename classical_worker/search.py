@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import time
 
+from .config import (
+    DEFAULT_DEPTH,
+    DEFAULT_TIME_BUDGET,
+    DEFAULT_TT_ENTRIES,
+    DEFAULT_VCF_BUDGET,
+    DEFAULT_WIDTH,
+)
 from .position import BOARD_SIZE, Position, other
-from .threats import VCF, VCT, forced_moves
+from .threats import VCF, five_moves, forced_moves
 from .tt import (
     EXACT,
     LOWER,
@@ -20,10 +27,6 @@ from .tt import (
 INFINITY = 10**10
 
 
-DEFAULT_VCF_BUDGET = 0.10
-DEFAULT_VCT_BUDGET = 0.0
-
-
 class SearchTimeout(Exception):
     pass
 
@@ -31,12 +34,11 @@ class SearchTimeout(Exception):
 class Searcher:
     def __init__(
         self,
-        depth: int = 8,
-        width: int = 12,
-        time_budget: float = 2.0,
+        depth: int = DEFAULT_DEPTH,
+        width: int = DEFAULT_WIDTH,
+        time_budget: float = DEFAULT_TIME_BUDGET,
         vcf_budget: float = DEFAULT_VCF_BUDGET,
-        vct_budget: float = DEFAULT_VCT_BUDGET,
-        tt_entries: int = 200_000,
+        tt_entries: int = DEFAULT_TT_ENTRIES,
         max_nodes: int | None = None,
     ) -> None:
         self.depth = max(2, depth)
@@ -44,9 +46,7 @@ class Searcher:
         self._limit = self.width
         self.time_budget = max(0.05, time_budget)
         self.vcf_budget = max(0.0, vcf_budget)
-        self.vct_budget = max(0.0, vct_budget)
         self.max_nodes = max_nodes
-
 
         self.table = TranspositionTable(tt_entries)
         self.history: dict[tuple[int, int, int], int] = {}
@@ -85,11 +85,11 @@ class Searcher:
             return None
 
 
-        own_five = [cell for cell in neighbours if position.wins_with(*cell, player)]
+        own_five = five_moves(position, player)
         if own_five:
             return own_five[0]
         opponent = other(player)
-        opponent_five = [cell for cell in neighbours if position.wins_with(*cell, opponent)]
+        opponent_five = five_moves(position, opponent)
 
         if len(opponent_five) == 1:
             return opponent_five[0]
@@ -107,23 +107,18 @@ class Searcher:
             if move is not None:
                 return move
 
-        if self.vct_budget > 0:
-            vct_deadline = min(deadline, time.monotonic() + budget * self.vct_budget)
-            move = VCT(max_depth=max(2, max_depth // 2)).best_move(position, player, vct_deadline)
-            if move is not None:
-                return move
-
         self.deadline = deadline
         self.soft_deadline = time.monotonic() + budget * 0.85
-        moves = forced_moves(position, player, limit * 2, None, (), self.history, 0)
+        moves = forced_moves(position, player, limit * 2, None, (), self.history)
         if not moves:
             return None
         best = moves[0]
         for current in range(2, max_depth + 1):
             try:
-                value, move = self._root(position, player, current)
+                value, move = self._root(position, player, current, moves)
             except SearchTimeout:
                 break
+            moves = None
             if move is not None:
                 best = move
                 self.depth_reached = current
@@ -134,16 +129,22 @@ class Searcher:
         return best
 
 
-    def _root(self, position: Position, player: int, depth: int) -> tuple[int, tuple[int, int]]:
-        moves = forced_moves(
-            position,
-            player,
-            self._limit * 2,
-            None,
-            tuple(self.killers.get(0, ())),
-            self.history,
-            0,
-        )
+    def _root(
+        self,
+        position: Position,
+        player: int,
+        depth: int,
+        moves: list[tuple[int, int]] | None = None,
+    ) -> tuple[int, tuple[int, int]]:
+        if moves is None:
+            moves = forced_moves(
+                position,
+                player,
+                self._limit * 2,
+                None,
+                tuple(self.killers.get(0, ())),
+                self.history,
+            )
         best_value = -INFINITY
         best_move = moves[0]
         alpha = -INFINITY
@@ -206,7 +207,6 @@ class Searcher:
             tt_move,
             tuple(self.killers.get(ply, ())),
             self.history,
-            ply,
         )
         if not moves:
             return 0

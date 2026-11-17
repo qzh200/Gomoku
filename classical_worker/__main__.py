@@ -45,7 +45,6 @@ def main(argv: list[str] | None = None) -> int:
         width=settings.width,
         time_budget=settings.time_budget,
         vcf_budget=settings.vcf_budget,
-        vct_budget=settings.vct_budget,
         tt_entries=settings.tt_entries,
     )
     worker = Worker(

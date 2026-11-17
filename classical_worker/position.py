@@ -71,10 +71,6 @@ class Position:
         self._neighbour_cache: list[tuple[int, int]] | None = None
         self._recount()
 
-    def copy(self) -> "Position":
-        return Position(self.grid)
-
-
     @staticmethod
     def _all_windows():
         for dr, dc in DIRECTIONS:
@@ -120,10 +116,6 @@ class Position:
             black, white = WINDOW_SCORES[self._code_at(row, col, dr, dc)]
             self.totals[BLACK] += black
             self.totals[WHITE] += white
-
-    def recount(self) -> None:
-        self._recount()
-
 
     def evaluate(self, player: int) -> int:
         return self.totals[player] - self.totals[other(player)]

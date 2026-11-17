@@ -1,17 +1,15 @@
 # 传统引擎（classical_worker）
 
-传统引擎是纯 CPU 的确定性搜索：6 格窗口棋型评分、精确 9 格威胁分类、PVS + 置换表、VCF/VCT 强制手搜索。默认参数下每手约 2 秒，深度 8、宽度 12。
+传统引擎是纯 CPU 的确定性搜索：6 格窗口棋型评分、精确 9 格威胁分类、PVS + 置换表、VCF 强制手搜索。默认参数下每手约 2 秒，深度 8、宽度 12。
 
 ## 1. 模块
 
 ```mermaid
 flowchart LR
   P["patterns.py<br/>6 格窗口 → 棋型分"] --> POS["position.py<br/>棋盘 + 增量总分 + Zobrist"]
-  POS --> SH["shapes.py<br/>整线棋型 → Threat"]
-  POS --> TH["threats.py<br/>9 格威胁表 / 排序 / VCF / VCT"]
+  POS --> TH["threats.py<br/>9 格威胁表 / 排序 / VCF"]
   TH --> S["search.py<br/>迭代加深 + PVS + killers"]
   TT["tt.py<br/>置换表"] --> S
-  SH --> TH
   S --> E["engine.py<br/>choose_move"]
   E --> W["aiworker.Worker"]
 ```
@@ -20,8 +18,7 @@ flowchart LR
 | --- | --- | --- |
 | `patterns.py` | 否 | 6 格窗口的 base-3 编码与评分表 |
 | `position.py` | 是 | 落子/撤销、增量评分、Zobrist、邻居集合 |
-| `shapes.py` | 传入 | 整条线枚举活四/冲四/活三，供 VCT 防守使用 |
-| `threats.py` | 传入 | 9 格威胁表、候选排序、强制手、VCF、VCT |
+| `threats.py` | 传入 | 9 格威胁表、候选排序、强制手、VCF |
 | `tt.py` | 否 | 有界置换表与 mate 分数归一化 |
 | `search.py` | 是 | 根搜索、PVS、时间预算 |
 | `engine.py` | 适配层 | 把 `board` 转成 `Position`，读取每局 config |
@@ -85,12 +82,11 @@ Zobrist：`ZOBRIST[player][row*15+col]`，落子/撤销 XOR 同一个键。置�
 以候选点为中心，沿一个方向取左右各 4 格，共 8 个可变格（中心固定为自己）。编码为 base-3 的 8 位数，共 `3^8 = 6561` 种。`THREAT_TABLE[code]` 返回：
 
 ```text
-(five, five_points, open_fours, open_threes)
+(five, five_points, open_threes)
 ```
 
 - `five`：窗口里已有五连；
 - `five_points`：落这一子后，本线上能立刻成五的空点数；
-- `open_fours`：本线上出现 `011110` 的次数；
 - `open_threes`：本线上出现活三模式且中心是其中一子的情况。
 
 越界一律当 `2`（对方/墙）。四个方向的结果相加/取或，得到 `Threat`。
@@ -135,8 +131,6 @@ Zobrist：`ZOBRIST[player][row*15+col]`，落子/撤销 XOR 同一个键。置�
 2. 对方有 `blocks` → 只返回堵点；
 3. 否则按排序键取前 `limit` 个。
 
-`ordered_moves` 只排序、不裁剪成强制手，供 VCF/教师策略使用。
-
 排序键**故意不含窗口总分**：为每个候选构造 24 个窗口 code 的成本会主导节点开销，把深度压到 2 左右。威胁等级、killer、history 和行列序已经足够。
 
 ## 4. 根节点特殊处理
@@ -148,8 +142,7 @@ Zobrist：`ZOBRIST[player][row*15+col]`，落子/撤销 XOR 同一个键。置�
 3. 对方恰有一个成五点 → 直接堵。
 4. 对方有两个及以上成五点 → 跑 VCF（限 `budget * vcf_budget`），找不到就堵第一个。
 5. `vcf_budget > 0` → 跑 VCF，找到直接返回。
-6. `vct_budget > 0` → 跑 VCT，找到直接返回。
-7. 否则迭代加深 `2..max_depth` 的 PVS。
+6. 否则迭代加深 `2..max_depth` 的 PVS。
 
 这些短路让“必须赢/必须堵”的局面不消耗搜索预算，也避免 PVS 在明显战术点上选错。
 
@@ -183,22 +176,9 @@ VCF = Victory by Continuous Fours：只下能制造冲四/活四/成五的着法
 
 注意：VCF 是**攻击方**搜索。根节点调用时传入当前行动方；如果当前方没有连续冲四，结果为空。
 
-## 6. VCT（连续活三胜）
+## 6. PVS 搜索
 
-VCT 允许活三、冲四混合，搜索树更宽，也更容易产生误判。默认 `vct_budget = 0`，代码保留在 `CLASSICAL_VCT_BUDGET` 后面。
-
-`VCT` 与 VCF 的差异：
-
-- 深度从 1 开始递增；
-- `_defends` 需要枚举对方所有防守（活三的堵点、以及对方能造冲四的点），要求**每个**防守都失败才算成功；
-- `_attacks` 先处理自己/对方的成五点，再递归；
-- `_defences` 用 `shapes.threat_profile` 找活三，返回其 `blocks`，加上对方能形成 `five_points` 的点。
-
-根节点的防守不生成反冲四，因此单独启用 VCT 在实测中会降低胜率。除非重新设计防守生成，不要默认打开。
-
-## 7. PVS 搜索
-
-### 7.1 迭代加深
+### 6.1 迭代加深
 
 ```text
 for depth in 2..max_depth:
@@ -209,18 +189,20 @@ for depth in 2..max_depth:
 
 `soft_deadline = now + budget * 0.85`；硬截止 `deadline = now + budget * 0.95`。
 
-### 7.2 根搜索
+### 6.2 根搜索
 
 根节点用 `forced_moves(..., limit*2)`，比内部宽一倍，保证战术点不会被宽度裁掉。第一个子节点全窗口，后续子节点先零窗口探测；若 `value > alpha` 再全窗口重搜。根节点结果以 `EXACT` 写入 TT。
 
-### 7.3 内部 PVS
+`best_move` 先排一次根走法，再把它交给第一层 `_root` 复用；只有 killer/history 变化后的后续层才重新排序。
+
+### 6.3 内部 PVS
 
 ```text
 _pvs(depth, alpha, beta, player, ply):
   tick()
   if depth == 0: return evaluate(player)
   probe TT
-  moves = forced_moves(limit, tt_move, killers[ply], history, ply)
+  moves = forced_moves(limit, tt_move, killers[ply], history)
   for i, move in moves:
     if 立即成五: value = MATE_SCORE - (ply+1)
     elif i == 0: value = -pvs(... -beta, -alpha ...)
@@ -239,7 +221,7 @@ _pvs(depth, alpha, beta, player, ply):
 - 杀手着法按 ply 保存前 2 个；history 按 `(player,row,col)` 累加 `depth^2`。
 - 没有 LMR：安静格往往就是唯一防守点，宽度和强制手已经把树压窄。
 
-### 7.4 置换表
+### 6.4 置换表
 
 `tt.py` 的 `TranspositionTable` 是 `dict[int, Entry]`：
 
@@ -258,14 +240,14 @@ from_table: 反向
 
 这样同一个“几步内必胜”在不同搜索深度下不会因为 ply 偏移而互相污染。
 
-### 7.5 时间与节点
+### 6.5 时间与节点
 
-- `tick()` 每 16 个节点检查一次硬截止；VCF/VCT 每 8 个。
+- `tick()` 每 16 个节点检查一次硬截止；VCF 每 8 个。
 - 硬截止抛 `SearchTimeout`，根循环捕获后返回已完成深度的最佳着法。
 - `max_nodes` 可选，测试用。
 - 超时不会修改棋盘：所有 `play` 都有对应 `finally: undo`。
 
-## 8. 参数
+## 7. 参数
 
 环境变量（`classical_worker/config.py`）：
 
@@ -275,35 +257,39 @@ from_table: 反向
 | `CLASSICAL_WIDTH` | 12 | 内部节点宽度 |
 | `CLASSICAL_TIME_BUDGET` | 2.0 | 每手秒数 |
 | `CLASSICAL_VCF_BUDGET` | 0.10 | VCF 占总预算比例 |
-| `CLASSICAL_VCT_BUDGET` | 0.0 | VCT 比例，默认关闭 |
 | `CLASSICAL_TT_ENTRIES` | 200000 | 置换表条目上限 |
 
-每局 `config` 覆盖 `depth` / `width` / `time_budget`（`engine.choose_move` 读取）。`vcf_budget` / `vct_budget` / `tt_entries` 只来自进程环境。
+每局 `config` 覆盖 `depth` / `width` / `time_budget`（`engine.choose_move` 读取）。`vcf_budget` / `tt_entries` 只来自进程环境。
+
+默认值只写在 `config.py` 一处，`engine.py` 与 `search.py` 直接引用，不再各自写死。
 
 `Searcher` 复用同一个实例，因此 TT、history、killers 在整局内保留；每手 `new_generation()` 和清空 killers/history。TT 跨手保留是刻意的。
 
-## 9. 基准
+## 8. 基准
 
-`python -m classical_worker.benchmark --games 20 --budget 0.2`
+`python -m classical_worker.benchmark --games 20`
 
-`benchmark.py` 让 v2 与 `tests/fixtures/` 里冻结的 v1 对弈，交替先后手，8 种开局偏移，统计胜负、平均/p95/最大用时、平均完成深度。
+`benchmark.py` 让 v2 与 `tests/fixtures/` 里冻结的 v1 对弈，交替先后手，8 种开局偏移，统计胜负、平均/p95/最大用时、平均完成深度。基准默认档位是 0.2s/手、VCF 比例取生产默认 0.10（`BENCHMARK_*` 常量集中在 `benchmark.py` 顶部）。
 
-实测记录（默认配置、0.2s/手）：
+实测记录（默认档位，同一份代码连续跑三次）：
 
-| 指标 | 值 |
-| --- | --- |
-| 对 v1 | 14 胜 / 6 负 |
-| 平均每手 | 0.126 s |
-| p95 | 0.204 s |
-| 平均完成深度 | 2.2 |
+| 指标 | 第 1 次 | 第 2 次 | 第 3 次 |
+| --- | --- | --- | --- |
+| 对 v1 | 14 胜 / 6 负 | 17 胜 / 3 负 | 19 胜 / 1 负 |
+| 平均每手 | 0.128 s | 0.121 s | 0.118 s |
+| p95 | 0.204 s | 0.204 s | 0.204 s |
+| 平均完成深度 | 2.2 | 2.1 | 2.0 |
 
-深度只有 2.2 是宽度 12 + 每候选两次威胁分类的代价；战术正确性主要来自根节点短路、VCF 和威胁排序，而不是完整深搜。
+搜索按**时间预算**截断，同一份代码在机器负载不同的时候走法就会变，所以胜负波动很大（20 局里 14~19 胜）。要判断一次改动到底有没有变强，得把预算固定成节点数再对比。
 
-## 10. 已知边界
+深度只有 2.0~2.2 是宽度 12 + 每候选两次威胁分类的代价；战术正确性主要来自根节点短路、VCF 和威胁排序，而不是完整深搜。
+
+## 9. 已知边界
 
 - 评估是窗口加权和，不是精确的“活四/双三”组合判定；叶节点可能高估或低估复合威胁。
-- VCF 只检查对方立即成五，不检查对方反冲四（VCT 才处理，且默认关闭）。
+- VCF 只检查对方立即成五，不检查对方反冲四。
 - 宽度裁剪可能漏掉唯一防守；`forced_moves` 只保证成五/堵成五不被裁。
 - 置换表用整体清空，长局中会出现周期性重建。
 - 没有开局库；第一手固定天元。
+- 基准按时间预算截断，同一版本 20 局能差出 5 胜；评估改动要用固定节点预算。
 - 单线程；没有并行搜索。

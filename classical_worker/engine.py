@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from .config import (
+    DEFAULT_DEPTH,
+    DEFAULT_TIME_BUDGET,
+    DEFAULT_TT_ENTRIES,
+    DEFAULT_VCF_BUDGET,
+    DEFAULT_WIDTH,
+)
 from .position import Position
 from .search import Searcher
 
@@ -11,12 +18,11 @@ class EngineError(RuntimeError):
 class ClassicalEngine:
     def __init__(
         self,
-        depth: int = 8,
-        width: int = 12,
-        time_budget: float = 2.0,
-        vcf_budget: float = 0.10,
-        vct_budget: float = 0.0,
-        tt_entries: int = 200_000,
+        depth: int = DEFAULT_DEPTH,
+        width: int = DEFAULT_WIDTH,
+        time_budget: float = DEFAULT_TIME_BUDGET,
+        vcf_budget: float = DEFAULT_VCF_BUDGET,
+        tt_entries: int = DEFAULT_TT_ENTRIES,
     ) -> None:
         self.depth = depth
         self.width = width
@@ -26,7 +32,6 @@ class ClassicalEngine:
             width=width,
             time_budget=time_budget,
             vcf_budget=vcf_budget,
-            vct_budget=vct_budget,
             tt_entries=tt_entries,
         )
 
@@ -38,6 +43,7 @@ class ClassicalEngine:
         last_move: dict | None = None,
         config: dict | None = None,
     ) -> tuple[int, int]:
+        # history / last_move 是 Worker 协议要求的参数，本引擎用不到：棋局状态全在 board 里。
         settings = config or {}
         move = self.searcher.best_move(
             Position(board),
