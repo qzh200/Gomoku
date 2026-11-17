@@ -335,6 +335,7 @@ P = (1 - 0.25) * P + 0.25 * η
 | `--device` / `--model` / `--init` / `--seed` | auto / `models/az/current.pt` / 同 model / 0 | 运行参数 |
 | `--channels` / `--blocks` / `--value-hidden` | 64 / 6 / 64 | 网络规模（从随机网络起步时生效） |
 | `--buffer-file` / `--resume` | 无 / 关 | 回放池落盘与续训 |
+| `--log-file` | auto | 每轮追加一行 CSV；auto = 权重同目录的 `<model>.log`，`none` 关闭 |
 
 ### 8.6 性能参考
 
@@ -427,7 +428,9 @@ python -m venv .venv
 ```
 
 `--workers auto` 会按空闲显存推到 13 个进程、`--games auto` 跟着取 13 局/轮；显存吃紧
-（桌面占得多）时可以显式降到 8：
+（桌面占得多）时可以显式降到 8。每轮往 `models/az/current.log` 追加一行 CSV
+（`time,iteration,step,learning_rate,simulations,games,wins,losses,draws,plies,buffer,policy_loss,value_loss,seconds`），
+`--log-file none` 可以关掉，`--log-file <路径>` 可以改位置。
 
 ```sh
 .venv/Scripts/python.exe -m az_worker.train --device cuda --workers 8 \

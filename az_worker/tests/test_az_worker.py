@@ -42,6 +42,7 @@ from az_worker.selfplay import (
 )
 from az_worker.threats import board_masks, five_mask, open_three_mask, threat_masks
 from az_worker.train import (
+    append_iteration_log,
     learning_rate,
     plan_games,
     plan_workers,
@@ -569,6 +570,35 @@ class SharedInferenceTests(unittest.TestCase):
         for example in game.examples:
             self.assertAlmostEqual(float(example.policy.sum()), 1.0, places=5)
         self.assertTrue(stop.is_set())
+
+
+class TrainingLogTests(unittest.TestCase):
+    def test_the_log_writes_one_header_then_a_row_per_iteration(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "nested" / "train.log"
+            row = {
+                "time": "2026-11-17 18:00:00",
+                "iteration": 1,
+                "step": 250,
+                "learning_rate": 0.0125,
+                "simulations": 128,
+                "games": 13,
+                "wins": 7,
+                "losses": 6,
+                "draws": 0,
+                "plies": 780,
+                "buffer": 780,
+                "policy_loss": 4.1234,
+                "value_loss": 0.5,
+                "seconds": 27.3,
+            }
+            append_iteration_log(path, row)
+            append_iteration_log(path, {**row, "iteration": 2, "step": 500})
+            lines = path.read_text(encoding="utf-8").strip().splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(lines[0].startswith("time,iteration,step,learning_rate"))
+        self.assertIn(",250,", lines[1])
+        self.assertEqual(len(lines[0].split(",")), len(lines[1].split(",")))
 
 
 class DatasetTests(unittest.TestCase):

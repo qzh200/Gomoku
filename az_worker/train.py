@@ -83,6 +83,34 @@ def plan_games(requested, workers: int) -> int:
     return max(GAMES_PER_ITERATION, workers)
 
 
+LOG_COLUMNS = (
+    "time",
+    "iteration",
+    "step",
+    "learning_rate",
+    "simulations",
+    "games",
+    "wins",
+    "losses",
+    "draws",
+    "plies",
+    "buffer",
+    "policy_loss",
+    "value_loss",
+    "seconds",
+)
+
+
+def append_iteration_log(path: str | Path, row: dict) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fresh = not target.exists() or target.stat().st_size == 0
+    with target.open("a", encoding="utf-8", newline="") as handle:
+        if fresh:
+            handle.write(",".join(LOG_COLUMNS) + "\n")
+        handle.write(",".join(str(row[column]) for column in LOG_COLUMNS) + "\n")
+
+
 def learning_rate(step: int, total_steps: int, base: float = LEARNING_RATE) -> float:
     decays = 0
     for fraction in DECAY_FRACTIONS:
@@ -146,6 +174,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--value-hidden", type=int, default=VALUE_HIDDEN, help="价值头隐层宽度")
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
     parser.add_argument("--buffer-file", default=None, help="回放缓冲区存档文件")
+    parser.add_argument(
+        "--log-file",
+        default="auto",
+        help="每轮追加一行训练记录（CSV）；auto 写到权重同目录的 <model>.log，none 关闭",
+    )
     parser.add_argument("--resume", action="store_true", help="读取缓冲区与步数继续训练")
     return parser
 
@@ -167,6 +200,13 @@ def main(argv: list[str] | None = None) -> int:
     torch.manual_seed(seed)
 
     model_path = Path(args.model)
+    log_path = None
+    if str(args.log_file).lower() not in ("", "none", "off"):
+        log_path = (
+            str(model_path.with_suffix(".log"))
+            if str(args.log_file) == "auto"
+            else args.log_file
+        )
     start_path = Path(args.init) if args.init else model_path
     if start_path.is_file():
         model = load_model(str(start_path), device)
@@ -213,6 +253,8 @@ def main(argv: list[str] | None = None) -> int:
         f"每轮 {steps_per_iteration} 步，轮数 {args.iterations}，每轮 {games} 局",
         flush=True,
     )
+    if log_path:
+        print(f"训练记录: {log_path}", flush=True)
     pool = None
     server = None
     stop_event = None
@@ -314,13 +356,35 @@ def main(argv: list[str] | None = None) -> int:
             dataset.save(args.buffer_file)
         elapsed = time.monotonic() - started
         recent = len(policy_losses[-20:]) or 1
+        mean_policy = sum(policy_losses[-20:]) / recent
+        mean_value = sum(value_losses[-20:]) / recent
+        if log_path:
+            append_iteration_log(
+                log_path,
+                {
+                    "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "iteration": iteration,
+                    "step": step,
+                    "learning_rate": f"{learning_rate(step, args.total_steps, args.lr):.8g}",
+                    "simulations": simulations,
+                    "games": len(games_played),
+                    "wins": wins[1],
+                    "losses": wins[2],
+                    "draws": wins[None],
+                    "plies": plies,
+                    "buffer": len(dataset),
+                    "policy_loss": f"{mean_policy:.4f}",
+                    "value_loss": f"{mean_value:.4f}",
+                    "seconds": f"{elapsed:.1f}",
+                },
+            )
         print(
             f"第 {iteration} 轮: 步 {step}/{args.total_steps}，学习率 "
             f"{learning_rate(step, args.total_steps, args.lr):.6g}，模拟 {simulations}，"
             f"自对弈 {len(games_played)} 局（{wins[1]}:{wins[2]}，和 {wins[None]}，"
             f"{plies} 手），缓冲区 {len(dataset)}，"
-            f"策略 {sum(policy_losses[-20:]) / recent:.4f} "
-            f"价值 {sum(value_losses[-20:]) / recent:.4f}，"
+            f"策略 {mean_policy:.4f} "
+            f"价值 {mean_value:.4f}，"
             f"用时 {elapsed:.0f} 秒",
             flush=True,
         )

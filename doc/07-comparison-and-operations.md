@@ -235,9 +235,13 @@ python -m unittest discover -s llm_worker/tests -t .
 ```
 
 整套默认预算在 RTX 4060 Laptop 上约 **1 小时**（13 个 CUDA 自对弈进程，GPU 平均 47.5%、
-峰值 96%，显存 6.9 GB）；单进程约 4.5 小时。自对弈是单核 Python，梯度步阶段 GPU 才
-满载；`--search-batch` 与线程数不是吞吐参数，并行进程才是。每个 CUDA 进程约 230 MB
-显存上下文，8 GB 卡在桌面占用约 4 GB 时最多 13 个进程，再多会被系统终止。
+峰值 96%，显存 6.9 GB）；单进程约 4.5 小时。每轮还会往 `models/az/current.log` 追加一行
+CSV（学习率、模拟数、胜负、手数、缓冲大小、策略/价值损失、用时），跑完可以直接画曲线；
+`--log-file none` 关闭，`--log-file <路径>` 改位置。
+
+自对弈是单核 Python，梯度步阶段 GPU 才满载；`--search-batch` 与线程数不是吞吐参数，
+并行进程才是。每个 CUDA 进程约 230 MB 显存上下文，8 GB 卡在桌面占用约 4 GB 时最多
+13 个进程，再多会被系统终止。
 
 要提高棋力，增加 `--total-steps`、`--games`、`--iterations`，方法与代码不用改。训练会
 占满显存，建议与 Worker 分开运行。
