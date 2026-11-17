@@ -212,14 +212,24 @@ python -m unittest discover -s llm_worker/tests -t .
 都由默认的 `auto` 按空闲显存和 CPU 核数推导（这台机器上是 13 个进程、13 局/轮）：
 
 ```sh
-# 从随机网络起训（默认 25,000 步 / 100 轮）
-.venv/Scripts/python.exe -m az_worker.train \
-  --total-steps 25000 --iterations 100 --device cuda \
+# 从随机网络起训（默认 25,000 步 / 100 轮，约 1 小时）
+.venv/Scripts/python.exe -m az_worker.train --device cuda \
+  --total-steps 25000 --iterations 100 \
+  --model models/az/current.pt --buffer-file models/az/replay.pt --seed 1
+
+# 桌面占着 GPU、想留余量：8 个进程（约 5.9 GB 显存，约 1.5 小时）
+.venv/Scripts/python.exe -m az_worker.train --device cuda --workers 8 \
+  --total-steps 25000 --iterations 100 \
+  --model models/az/current.pt --buffer-file models/az/replay.pt --seed 1
+
+# 显存吃紧又要更多进程：共享推理（单份 CUDA 上下文）
+.venv/Scripts/python.exe -m az_worker.train --device cuda --worker-device shared \
+  --total-steps 25000 --iterations 100 \
   --model models/az/current.pt --buffer-file models/az/replay.pt --seed 1
 
 # 中断后续训：权重、回放池、已完成步数一起恢复
-.venv/Scripts/python.exe -m az_worker.train \
-  --total-steps 25000 --iterations 100 --device cuda \
+.venv/Scripts/python.exe -m az_worker.train --device cuda \
+  --total-steps 25000 --iterations 100 \
   --model models/az/current.pt --init models/az/current.pt \
   --buffer-file models/az/replay.pt --resume
 ```
@@ -227,8 +237,7 @@ python -m unittest discover -s llm_worker/tests -t .
 整套默认预算在 RTX 4060 Laptop 上约 **1 小时**（13 个 CUDA 自对弈进程，GPU 平均 47.5%、
 峰值 96%，显存 6.9 GB）；单进程约 4.5 小时。自对弈是单核 Python，梯度步阶段 GPU 才
 满载；`--search-batch` 与线程数不是吞吐参数，并行进程才是。每个 CUDA 进程约 230 MB
-显存上下文，8 GB 卡在桌面占用约 4 GB 时最多 13 个进程，再多会被系统终止；显存吃紧
-时可用 `--worker-device shared` 让所有进程共用一个 GPU 推理服务。
+显存上下文，8 GB 卡在桌面占用约 4 GB 时最多 13 个进程，再多会被系统终止。
 
 要提高棋力，增加 `--total-steps`、`--games`、`--iterations`，方法与代码不用改。训练会
 占满显存，建议与 Worker 分开运行。

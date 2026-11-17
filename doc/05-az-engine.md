@@ -412,32 +412,62 @@ CUDA 上下文，进程数不再受显存限制，请求按批合并后转发到
 ## 12. 运行
 
 ```sh
-# 依赖
+# 依赖（仅首次）
 python -m venv .venv
 .venv/Scripts/python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
 .venv/Scripts/python -m pip install numpy
+```
 
-# 1. 自对弈训练（从随机网络开始；有检查点就用 --init 续训）
-.venv/Scripts/python.exe -m az_worker.train \
-  --total-steps 25000 --iterations 100 --games 10 --device cuda \
-  --workers 4 --worker-device cuda \
+### 12.1 训练（快：13 个自对弈进程，约 1 小时）
+
+```sh
+.venv/Scripts/python.exe -m az_worker.train --device cuda \
+  --total-steps 25000 --iterations 100 \
   --model models/az/current.pt --buffer-file models/az/replay.pt --seed 1
+```
 
-# 2. 中断后续训（回放池与步数一起恢复）
-.venv/Scripts/python.exe -m az_worker.train \
-  --total-steps 25000 --iterations 100 --games 10 --device cuda \
-  --workers 4 --worker-device cuda \
+`--workers auto` 会按空闲显存推到 13 个进程、`--games auto` 跟着取 13 局/轮；显存吃紧
+（桌面占得多）时可以显式降到 8：
+
+```sh
+.venv/Scripts/python.exe -m az_worker.train --device cuda --workers 8 \
+  --total-steps 25000 --iterations 100 \
+  --model models/az/current.pt --buffer-file models/az/replay.pt --seed 1
+```
+
+显存不足又想要更多自对弈进程时，用共享推理（单份 CUDA 上下文）：
+
+```sh
+.venv/Scripts/python.exe -m az_worker.train --device cuda --worker-device shared \
+  --total-steps 25000 --iterations 100 \
+  --model models/az/current.pt --buffer-file models/az/replay.pt --seed 1
+```
+
+### 12.2 中断后续训
+
+```sh
+.venv/Scripts/python.exe -m az_worker.train --device cuda \
+  --total-steps 25000 --iterations 100 \
   --model models/az/current.pt --init models/az/current.pt \
   --buffer-file models/az/replay.pt --resume
+```
 
-# 3. 擂台
+每轮结束都会写权重与回放池；`--init` 与 `--model` 指向同一个文件是合法的原地续训写法。
+检查点里的 `meta.step` 会被读取，学习率与模拟数接着之前的进度走。
+
+### 12.3 擂台
+
+```sh
 .venv/Scripts/python.exe -m az_worker.arena --model models/az/current.pt \
   --games 40 --device cuda --time-budget 2.0 \
   --classical-depth 4 --classical-time 0.5 --opening-moves 2 --seed 42
+```
 
-# 4. Worker（被 MyGo 调用）
+### 12.4 Worker（被 MyGo 调用）
+
+```sh
 .venv/Scripts/python.exe -m az_worker
 ```
 
 要提高棋力，增加 `--total-steps`、`--games`、`--iterations` 即可，方法与代码不变。
-训练会占满显存，建议与 Worker 分开运行。
+训练会占满显存，建议与 Worker 分开运行；桌面同时占用 GPU 时把 `--workers` 降到 8。
