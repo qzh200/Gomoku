@@ -111,25 +111,30 @@ def train_batch(
     return float(loss.item()), float(policy_loss.item()), float(value_loss.item())
 
 
-def save(model: GomokuNet, path: str, meta: dict | None = None) -> None:
-    torch.save(
-        {
-            "state": model.state_dict(),
-            "channels": model.channels,
-            "blocks": model.blocks,
-            "value_hidden": model.value_hidden,
-            "policy_channels": model.policy_channels,
-            "value_channels": model.value_channels,
-            "planes": PLANE_COUNT,
-            "meta": dict(meta or {}),
-        },
-        path,
-    )
+def save(model: GomokuNet, path: str, meta: dict | None = None, extra: dict | None = None) -> None:
+    payload = {
+        "state": model.state_dict(),
+        "channels": model.channels,
+        "blocks": model.blocks,
+        "value_hidden": model.value_hidden,
+        "policy_channels": model.policy_channels,
+        "value_channels": model.value_channels,
+        "planes": PLANE_COUNT,
+        "meta": dict(meta or {}),
+    }
+    if extra:
+        payload["extra"] = extra
+    torch.save(payload, path)
 
 
 def read_meta(path: str) -> dict:
     payload = torch.load(path, map_location="cpu", weights_only=False)
     return dict(payload.get("meta") or {})
+
+
+def read_extra(path: str) -> dict:
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    return payload.get("extra") or {}
 
 
 def _count_blocks(state: dict) -> int:

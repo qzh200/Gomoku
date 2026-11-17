@@ -235,9 +235,21 @@ python -m unittest discover -s llm_worker/tests -t .
 ```
 
 整套默认预算在 RTX 4060 Laptop 上约 **1 小时**（13 个 CUDA 自对弈进程，GPU 平均 47.5%、
-峰值 96%，显存 6.9 GB）；单进程约 4.5 小时。每轮还会往 `models/az/current.log` 追加一行
-CSV（学习率、模拟数、胜负、手数、缓冲大小、策略/价值损失、用时），跑完可以直接画曲线；
-`--log-file none` 关闭，`--log-file <路径>` 改位置。
+峰值 96%，显存 6.9 GB）；单进程约 4.5 小时。监控三件套默认全开：
+
+| 通道 | 位置 | 内容 |
+| --- | --- | --- |
+| tqdm | 终端 | 轮进度与步数进度（含吞吐、剩余时间） |
+| CSV | `models/az/current.log` | 步数、学习率、局数、胜负、手数、缓冲、损失、吞吐、探针胜率 |
+| TensorBoard | `models/az/tensorboard/` | `train/*`（每 5 步）、`selfplay/*`、`replay/buffer`、`time/*`、`eval/winrate` |
+
+```sh
+.venv/Scripts/tensorboard.exe --logdir models/az/tensorboard --port 6006
+# 浏览器打开 http://127.0.0.1:6006
+```
+
+棋力探针默认每 20 轮打 4 局（对手传统引擎 d2/0.05s），约占全程 3–5%；`--eval-every 0`
+关闭。检查点内含优化器动量与 `step`/`iteration`/`games`，续训后曲线连续。
 
 自对弈是单核 Python，梯度步阶段 GPU 才满载；`--search-batch` 与线程数不是吞吐参数，
 并行进程才是。每个 CUDA 进程约 230 MB 显存上下文，8 GB 卡在桌面占用约 4 GB 时最多

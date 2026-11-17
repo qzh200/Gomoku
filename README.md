@@ -137,7 +137,7 @@ AlphaZero 需要安装依赖（仅首次）：
 ```sh
 python -m venv .venv
 .venv/Scripts/python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
-.venv/Scripts/python -m pip install numpy
+.venv/Scripts/python -m pip install numpy tensorboard tqdm
 ```
 
 > Linux/macOS 将 `.venv/Scripts/python` 换成 `.venv/bin/python`。

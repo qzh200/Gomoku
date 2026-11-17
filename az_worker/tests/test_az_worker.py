@@ -32,7 +32,15 @@ from az_worker.features import (
     legal_mask,
 )
 from az_worker.mcts import C_BASE, C_INIT, MCTS, Node, cell_of, row_col_of
-from az_worker.network import ACTION_COUNT, GomokuNet, load_model, save, train_batch
+from az_worker.network import (
+    ACTION_COUNT,
+    GomokuNet,
+    load_model,
+    read_extra,
+    read_meta,
+    save,
+    train_batch,
+)
 from az_worker.selfplay import (
     Example,
     SelfPlay,
@@ -572,6 +580,29 @@ class SharedInferenceTests(unittest.TestCase):
         self.assertTrue(stop.is_set())
 
 
+class CheckpointExtraTests(unittest.TestCase):
+    def test_the_optimizer_state_round_trips(self) -> None:
+        model = small_model()
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+        planes = torch.zeros(2, PLANE_COUNT, BOARD_SIZE, BOARD_SIZE)
+        policy = torch.full((2, ACTION_COUNT), 1.0 / ACTION_COUNT)
+        mask = torch.ones((2, ACTION_COUNT))
+        value = torch.ones(2)
+        train_batch(model, optimizer, planes, policy, value, mask)
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "model.pt")
+            save(model, path, {"step": 5, "games": 7}, {"optimizer": optimizer.state_dict()})
+            extra = read_extra(path)
+            meta = read_meta(path)
+            restored_model = load_model(path, DEVICE)
+        self.assertEqual(int(meta["step"]), 5)
+        self.assertEqual(int(meta["games"]), 7)
+        self.assertIn("optimizer", extra)
+        restored = torch.optim.SGD(restored_model.parameters(), lr=0.1, momentum=0.9)
+        restored.load_state_dict(extra["optimizer"])
+        self.assertEqual(len(restored.state), len(optimizer.state))
+
+
 class TrainingLogTests(unittest.TestCase):
     def test_the_log_writes_one_header_then_a_row_per_iteration(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
@@ -583,6 +614,7 @@ class TrainingLogTests(unittest.TestCase):
                 "learning_rate": 0.0125,
                 "simulations": 128,
                 "games": 13,
+                "total_games": 13,
                 "wins": 7,
                 "losses": 6,
                 "draws": 0,
@@ -590,7 +622,9 @@ class TrainingLogTests(unittest.TestCase):
                 "buffer": 780,
                 "policy_loss": 4.1234,
                 "value_loss": 0.5,
+                "steps_per_second": 9.2,
                 "seconds": 27.3,
+                "eval_winrate": "",
             }
             append_iteration_log(path, row)
             append_iteration_log(path, {**row, "iteration": 2, "step": 500})

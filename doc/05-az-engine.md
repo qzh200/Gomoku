@@ -336,6 +336,10 @@ P = (1 - 0.25) * P + 0.25 * η
 | `--channels` / `--blocks` / `--value-hidden` | 64 / 6 / 64 | 网络规模（从随机网络起步时生效） |
 | `--buffer-file` / `--resume` | 无 / 关 | 回放池落盘与续训 |
 | `--log-file` | auto | 每轮追加一行 CSV；auto = 权重同目录的 `<model>.log`，`none` 关闭 |
+| `--tensorboard` | auto | 事件目录；auto = 权重同目录的 `tensorboard/`，`none` 关闭 |
+| `--eval-every` / `--eval-games` | 20 / 4 | 每 N 轮跟传统引擎做棋力探针及其局数（0 = 关） |
+| `--eval-simulations` / `--eval-classical-depth` / `--eval-classical-time` | 64 / 2 / 0.05 | 探针的搜索预算与对手强度 |
+| `--progress` | on | tqdm 进度条；`off` 用于把输出重定向到日志 |
 
 ### 8.6 性能参考
 
@@ -363,6 +367,25 @@ GPU 才满载；梯度只占总时长的一小部分。因此吞吐参数只有�
 `--worker-device shared` 让多个 CPU 自对弈进程共用一个 GPU 推理服务：只有一份
 CUDA 上下文，进程数不再受显存限制，请求按批合并后转发到 GPU。显存吃紧或需要
 更多自对弈进程时用它；默认的每进程独立推理更简单，延迟也更低。
+
+### 8.7 监控与产物
+
+| 通道 | 位置 | 内容 |
+| --- | --- | --- |
+| tqdm | 终端 | 每轮一个步数进度条（含吞吐与剩余时间），外加总轮数进度条 |
+| CSV | `<model>.log` | `time,iteration,step,learning_rate,simulations,games,total_games,wins,losses,draws,plies,buffer,policy_loss,value_loss,steps_per_second,seconds,eval_winrate` |
+| TensorBoard | 权重同目录的 `tensorboard/` | 每 5 步：`train/{loss,policy_loss,value_loss,learning_rate}`；每轮：`selfplay/{plies,simulations,games_total}`、`replay/buffer`、`time/{iteration_seconds,steps_per_second}`、`eval/{winrate,games}` |
+| 检查点 | `<model>.pt` | 权重 + `meta`（`step`、`iteration`、`games`、`lr`、`simulations`、`total_steps`）+ 优化器状态（SGD 动量） |
+
+```sh
+.venv/Scripts/tensorboard.exe --logdir models/az/tensorboard --port 6006
+# 浏览器打开 http://127.0.0.1:6006
+```
+
+`--eval-every 20 --eval-games 4`（默认）：每 20 轮跟传统引擎（d2 / 0.05 秒，候选 64
+模拟）打 4 局，胜率写进 `eval/winrate`，约占全程 3–5% 的时间。这是粗粒度的趋势线，
+正式比较棋力用 `az_worker.arena`（≥40 局），`--eval-every 0` 可关闭。
+续训会读回优化器动量、已完成步数与自对弈局数，曲线不会因为重启而跳变。
 
 ## 9. VCF / VCT
 
@@ -416,7 +439,7 @@ CUDA 上下文，进程数不再受显存限制，请求按批合并后转发到
 # 依赖（仅首次）
 python -m venv .venv
 .venv/Scripts/python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
-.venv/Scripts/python -m pip install numpy
+.venv/Scripts/python -m pip install numpy tensorboard tqdm
 ```
 
 ### 12.1 训练（快：13 个自对弈进程，约 1 小时）
@@ -429,8 +452,18 @@ python -m venv .venv
 
 `--workers auto` 会按空闲显存推到 13 个进程、`--games auto` 跟着取 13 局/轮；显存吃紧
 （桌面占得多）时可以显式降到 8。每轮往 `models/az/current.log` 追加一行 CSV
-（`time,iteration,step,learning_rate,simulations,games,wins,losses,draws,plies,buffer,policy_loss,value_loss,seconds`），
-`--log-file none` 可以关掉，`--log-file <路径>` 可以改位置。
+（`time,iteration,step,learning_rate,simulations,games,total_games,wins,losses,draws,plies,buffer,policy_loss,value_loss,steps_per_second,seconds,eval_winrate`），
+TensorBoard 事件写到 `models/az/tensorboard/`，检查点同时保存优化器动量与
+`step`/`iteration`/`games`。默认每 20 轮做一次棋力探针（4 局对传统引擎 d2/0.05s，
+约全程 3–5% 时间），`--eval-every 0` 关闭；`--log-file none`、`--tensorboard none`
+可以分别关掉记录。
+
+实时看曲线（另开一个终端）：
+
+```sh
+.venv/Scripts/tensorboard.exe --logdir models/az/tensorboard --port 6006
+# 浏览器打开 http://127.0.0.1:6006
+```
 
 ```sh
 .venv/Scripts/python.exe -m az_worker.train --device cuda --workers 8 \

@@ -137,7 +137,7 @@ For AlphaZero, install dependencies once:
 ```sh
 python -m venv .venv
 .venv/Scripts/python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
-.venv/Scripts/python -m pip install numpy
+.venv/Scripts/python -m pip install numpy tensorboard tqdm
 ```
 
 > On Linux/macOS, replace `.venv/Scripts/python` with `.venv/bin/python`.

@@ -13,7 +13,7 @@ import torch
 
 from .dataset import TensorDataset
 from .inference import serve
-from .network import GomokuNet, load_model, read_meta, train_batch
+from .network import GomokuNet, load_model, read_extra, read_meta, train_batch
 from .selfplay import (
     TEMPERATURE_MOVES,
     SelfPlay,
@@ -90,6 +90,7 @@ LOG_COLUMNS = (
     "learning_rate",
     "simulations",
     "games",
+    "total_games",
     "wins",
     "losses",
     "draws",
@@ -97,8 +98,26 @@ LOG_COLUMNS = (
     "buffer",
     "policy_loss",
     "value_loss",
+    "steps_per_second",
     "seconds",
+    "eval_winrate",
 )
+
+
+def measure_strength(
+    model_path,
+    device,
+    simulations: int,
+    classical_depth: int,
+    classical_time: float,
+    games: int,
+    seed: int,
+):
+    from .arena import az_side, classical_side, play_series
+
+    candidate = az_side(str(model_path), str(device), simulations, None, 0.0, 0.0, seed=seed)
+    opponent = classical_side(classical_depth, 12, classical_time)
+    return play_series(candidate, opponent, games, 2, seed)
 
 
 def append_iteration_log(path: str | Path, row: dict) -> None:
@@ -179,6 +198,27 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto",
         help="每轮追加一行训练记录（CSV）；auto 写到权重同目录的 <model>.log，none 关闭",
     )
+    parser.add_argument(
+        "--tensorboard",
+        default="auto",
+        help="TensorBoard 事件目录；auto 写到权重同目录的 tensorboard/，none 关闭",
+    )
+    parser.add_argument(
+        "--eval-every",
+        type=int,
+        default=20,
+        help="每隔多少轮跟传统引擎打几局做棋力探针，0 关闭",
+    )
+    parser.add_argument("--eval-games", type=int, default=4, help="探针局数")
+    parser.add_argument("--eval-simulations", type=int, default=64, help="探针每手模拟数")
+    parser.add_argument("--eval-classical-depth", type=int, default=2, help="探针对手深度")
+    parser.add_argument("--eval-classical-time", type=float, default=0.05, help="探针对手每手秒数")
+    parser.add_argument(
+        "--progress",
+        default="on",
+        choices=("on", "off"),
+        help="终端进度条（tqdm），off 用于日志重定向",
+    )
     parser.add_argument("--resume", action="store_true", help="读取缓冲区与步数继续训练")
     return parser
 
@@ -224,12 +264,22 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     step = 0
+    games_done = 0
     dataset = TensorDataset(device, capacity=args.buffer)
     if args.resume and args.buffer_file:
         dataset = TensorDataset.load(args.buffer_file, device, args.buffer)
         if model_path.is_file():
-            step = int(read_meta(str(model_path)).get("step", 0))
-        print(f"续训: 缓冲区 {len(dataset)} 条，已完成 {step} 步", flush=True)
+            meta = read_meta(str(model_path))
+            step = int(meta.get("step", 0))
+            games_done = int(meta.get("games", 0))
+            saved = read_extra(str(model_path)).get("optimizer")
+            if saved:
+                optimizer.load_state_dict(saved)
+                print("恢复优化器状态（动量）", flush=True)
+        print(
+            f"续训: 缓冲区 {len(dataset)} 条，已完成 {step} 步、{games_done} 局",
+            flush=True,
+        )
 
     steps_per_iteration = max(1, math.ceil(args.total_steps / args.iterations))
     parameters = sum(parameter.numel() for parameter in model.parameters())
@@ -255,6 +305,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     if log_path:
         print(f"训练记录: {log_path}", flush=True)
+    writer = None
+    if str(args.tensorboard).lower() not in ("", "none", "off"):
+        tb_dir = (
+            str(model_path.parent / "tensorboard")
+            if str(args.tensorboard) == "auto"
+            else args.tensorboard
+        )
+        from torch.utils.tensorboard import SummaryWriter
+
+        writer = SummaryWriter(tb_dir)
+        print(f"TensorBoard: {tb_dir}", flush=True)
     pool = None
     server = None
     stop_event = None
@@ -281,13 +342,26 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
 
+    from tqdm import tqdm
+
+    progress = args.progress == "on"
+    outer = tqdm(
+        total=args.iterations,
+        initial=min(args.iterations, step // steps_per_iteration),
+        desc="训练",
+        unit="轮",
+        disable=not progress,
+        position=0,
+    )
+
     for iteration in range(1, args.iterations + 1):
         if step >= args.total_steps:
             break
         started = time.monotonic()
+        step_started = step
         simulations = args.simulations or simulations_for(step, args.total_steps)
         if pool is not None:
-            save_checkpoint(model, model_path, {"step": step})
+            save_checkpoint(model, model_path, {"step": step, "games": games_done})
             stamp = checkpoint_stamp(str(model_path))
             tasks = [
                 (
@@ -317,15 +391,25 @@ def main(argv: list[str] | None = None) -> int:
             dataset.extend(game.examples)
             wins[game.winner] = wins.get(game.winner, 0) + 1
             plies += game.moves
+        games_done += len(games_played)
 
         losses: list[float] = []
         policy_losses: list[float] = []
         value_losses: list[float] = []
+        bar = tqdm(
+            total=steps_per_iteration,
+            desc=f"第 {iteration} 轮",
+            unit="步",
+            leave=False,
+            disable=not progress,
+            position=1,
+        )
         for _ in range(steps_per_iteration):
             if step >= args.total_steps:
                 break
+            current_lr = learning_rate(step, args.total_steps, args.lr)
             for group in optimizer.param_groups:
-                group["lr"] = learning_rate(step, args.total_steps, args.lr)
+                group["lr"] = current_lr
             planes, target_policy, mask, target_value = dataset.sample(
                 args.batch_size, rng, augment=args.augment
             )
@@ -341,6 +425,14 @@ def main(argv: list[str] | None = None) -> int:
             policy_losses.append(policy_loss)
             value_losses.append(value_loss)
             step += 1
+            bar.update(1)
+            bar.set_postfix(loss=f"{loss:.3f}", lr=f"{current_lr:.2e}")
+            if writer is not None and step % 5 == 0:
+                writer.add_scalar("train/loss", loss, step)
+                writer.add_scalar("train/policy_loss", policy_loss, step)
+                writer.add_scalar("train/value_loss", value_loss, step)
+                writer.add_scalar("train/learning_rate", current_lr, step)
+        bar.close()
 
         save_checkpoint(
             model,
@@ -348,9 +440,12 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "step": step,
                 "total_steps": args.total_steps,
+                "iteration": iteration,
+                "games": games_done,
                 "lr": learning_rate(step, args.total_steps, args.lr),
                 "simulations": simulations,
             },
+            {"optimizer": optimizer.state_dict()},
         )
         if args.buffer_file:
             dataset.save(args.buffer_file)
@@ -358,6 +453,44 @@ def main(argv: list[str] | None = None) -> int:
         recent = len(policy_losses[-20:]) or 1
         mean_policy = sum(policy_losses[-20:]) / recent
         mean_value = sum(value_losses[-20:]) / recent
+        per_second = (step - step_started) / max(elapsed, 1e-9)
+
+        eval_winrate = ""
+        eval_seconds = 0.0
+        if args.eval_every > 0 and iteration % args.eval_every == 0:
+            probe_started = time.monotonic()
+            try:
+                probe = measure_strength(
+                    model_path,
+                    device,
+                    args.eval_simulations,
+                    args.eval_classical_depth,
+                    args.eval_classical_time,
+                    args.eval_games,
+                    iteration,
+                )
+                eval_winrate = f"{probe.winrate:.3f}"
+                print(
+                    f"棋力探针（第 {iteration} 轮）: {probe.wins} 胜 {probe.losses} 负 "
+                    f"{probe.draws} 和，胜率 {probe.winrate:.0%}",
+                    flush=True,
+                )
+                if writer is not None:
+                    writer.add_scalar("eval/winrate", probe.winrate, step)
+                    writer.add_scalar("eval/games", probe.games, step)
+            except Exception as error:  # 探针失败不影响训练
+                print(f"棋力探针跳过: {error}", flush=True)
+            eval_seconds = time.monotonic() - probe_started
+
+        if writer is not None:
+            writer.add_scalar("selfplay/plies", plies, step)
+            writer.add_scalar("selfplay/simulations", simulations, step)
+            writer.add_scalar("replay/buffer", len(dataset), step)
+            writer.add_scalar("time/iteration_seconds", elapsed, step)
+            writer.add_scalar("time/steps_per_second", per_second, step)
+            writer.add_scalar("selfplay/games_total", games_done, step)
+            writer.flush()
+
         if log_path:
             append_iteration_log(
                 log_path,
@@ -368,6 +501,7 @@ def main(argv: list[str] | None = None) -> int:
                     "learning_rate": f"{learning_rate(step, args.total_steps, args.lr):.8g}",
                     "simulations": simulations,
                     "games": len(games_played),
+                    "total_games": games_done,
                     "wins": wins[1],
                     "losses": wins[2],
                     "draws": wins[None],
@@ -375,19 +509,26 @@ def main(argv: list[str] | None = None) -> int:
                     "buffer": len(dataset),
                     "policy_loss": f"{mean_policy:.4f}",
                     "value_loss": f"{mean_value:.4f}",
+                    "steps_per_second": f"{per_second:.2f}",
                     "seconds": f"{elapsed:.1f}",
+                    "eval_winrate": eval_winrate,
                 },
             )
+        outer.update(1)
+        outer.set_postfix(step=f"{step}/{args.total_steps}")
         print(
             f"第 {iteration} 轮: 步 {step}/{args.total_steps}，学习率 "
             f"{learning_rate(step, args.total_steps, args.lr):.6g}，模拟 {simulations}，"
             f"自对弈 {len(games_played)} 局（{wins[1]}:{wins[2]}，和 {wins[None]}，"
             f"{plies} 手），缓冲区 {len(dataset)}，"
-            f"策略 {mean_policy:.4f} "
-            f"价值 {mean_value:.4f}，"
-            f"用时 {elapsed:.0f} 秒",
+            f"策略 {mean_policy:.4f} 价值 {mean_value:.4f}，"
+            f"{per_second:.1f} 步/秒，用时 {elapsed:.0f} 秒"
+            + (f"，探针 {eval_seconds:.0f} 秒" if eval_seconds else ""),
             flush=True,
         )
+    outer.close()
+    if writer is not None:
+        writer.close()
     if pool is not None:
         pool.shutdown()
     if server is not None:

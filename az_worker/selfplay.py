@@ -108,10 +108,15 @@ class SelfPlay:
         return GameResult(winner, len(examples), examples)
 
 
-def save_checkpoint(model: GomokuNet, path: str | Path, meta: dict | None = None) -> None:
+def save_checkpoint(
+    model: GomokuNet,
+    path: str | Path,
+    meta: dict | None = None,
+    extra: dict | None = None,
+) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    save(model, str(target), meta)
+    save(model, str(target), meta, extra)
 
 
 def worker_init(
