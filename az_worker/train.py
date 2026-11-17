@@ -361,12 +361,13 @@ def main(argv: list[str] | None = None) -> int:
     writer = None
     if str(args.tensorboard).lower() not in ("", "none", "off"):
         tb_dir = (
-            str(model_path.parent / "tensorboard")
+            str(model_path.parent / "tensorboard" / model_path.stem)
             if str(args.tensorboard) == "auto"
             else args.tensorboard
         )
         from torch.utils.tensorboard import SummaryWriter
 
+        Path(tb_dir).mkdir(parents=True, exist_ok=True)
         writer = SummaryWriter(tb_dir)
         print(f"TensorBoard: {tb_dir}", flush=True)
     pool = None

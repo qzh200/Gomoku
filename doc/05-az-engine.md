@@ -357,7 +357,7 @@ P = (1 - 0.25) * P + 0.25 * η
 | `--channels` / `--blocks` / `--value-hidden` | 128 / 10 / 64 | 网络规模（从随机网络起步时生效） |
 | `--buffer-file` / `--resume` | 无 / 关 | 回放池落盘与续训 |
 | `--log-file` | auto | 每轮追加一行 CSV；auto = 权重同目录的 `<model>.log`，`none` 关闭 |
-| `--tensorboard` | auto | 事件目录；auto = 权重同目录的 `tensorboard/`，`none` 关闭 |
+| `--tensorboard` | auto | 事件目录；auto = 权重同目录的 `tensorboard/<权重名>/`（每个 run 一个子目录，TensorBoard 才分得开），`none` 关闭 |
 | `--eval-every` / `--eval-games` | 20 / 4 | 每 N 轮跟传统引擎做棋力探针及其局数（0 = 关） |
 | `--eval-simulations` / `--eval-vcf` / `--eval-vct` | 128 / 0.1 / 0.1 | 探针每手的搜索预算与解算器预算 |
 | `--eval-classical-depth` / `--eval-classical-time` | 2 / 0.05 | 探针对手强度 |
@@ -398,7 +398,7 @@ CUDA 上下文，进程数不再受显存限制，请求按批合并后转发到
 | --- | --- | --- |
 | tqdm | 终端 | 每轮一个步数进度条（含吞吐与剩余时间），外加总轮数进度条 |
 | CSV | `<model>.log` | `time,iteration,step,learning_rate,simulations,games,total_games,wins,losses,draws,plies,buffer,policy_loss,value_loss,steps_per_second,seconds,eval_winrate` |
-| TensorBoard | 权重同目录的 `tensorboard/` | 每 5 步：`train/{loss,policy_loss,value_loss,learning_rate}`；每轮：`selfplay/{plies,simulations,games_total}`、`replay/buffer`、`time/{iteration_seconds,steps_per_second}`、`eval/{winrate,games}` |
+| TensorBoard | 权重同目录的 `tensorboard/<权重名>/` | 每 5 步：`train/{loss,policy_loss,value_loss,learning_rate}`；每轮：`selfplay/{plies,simulations,games_total}`、`replay/buffer`、`time/{iteration_seconds,steps_per_second}`、`eval/{winrate,games}` |
 | 检查点 | `<model>.pt` | 权重 + `meta`（`step`、`iteration`、`games`、`lr`、`simulations`、`total_steps`）+ 优化器状态（SGD 动量） |
 
 ```sh
@@ -483,7 +483,9 @@ python -m venv .venv
 `--workers auto` 会按空闲显存推到 13 个进程、`--games auto` 跟着取 13 局/轮；显存吃紧
 （桌面占得多）时可以显式降到 8。每轮往 `models/az/current.log` 追加一行 CSV
 （`time,iteration,step,learning_rate,simulations,games,total_games,wins,losses,draws,plies,buffer,policy_loss,value_loss,steps_per_second,seconds,eval_winrate`），
-TensorBoard 事件写到 `models/az/tensorboard/`，检查点同时保存优化器动量与
+TensorBoard 事件写到 `models/az/tensorboard/<权重名>/`（续训沿用同一个子目录；换一个
+`--model` 就是新的一条曲线，同权重路径从头重训会用 `--tensorboard` 另指一个目录），
+检查点同时保存优化器动量与
 `step`/`iteration`/`games`。默认每 20 轮做一次棋力探针（4 局对传统引擎 d2/0.05s，
 约全程 3–5% 时间），`--eval-every 0` 关闭；`--log-file none`、`--tensorboard none`
 可以分别关掉记录。
