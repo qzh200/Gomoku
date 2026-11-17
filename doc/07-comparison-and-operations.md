@@ -35,15 +35,25 @@ python -m classical_worker.benchmark --games 20 --budget 0.2
 
 ```sh
 .venv/Scripts/python.exe -m az_worker.arena --model models/az/current_v3.pt \
-  --games 8 --device cuda --candidate-width 16 --time-budget 2.0 \
-  --classical-depth 4 --classical-time 0.5 --seed 42
+  --games 40 --device cuda --candidate-width 16 --time-budget 2.0 \
+  --classical-depth 4 --classical-time 0.5 --opening-moves 2 --seed 42
 ```
 
-8 局只能发现大缺陷（例如价值头方向错误导致 0:8），不能区分小幅提升。小差异看：
+对旧权重也走同一个入口：
+
+```sh
+.venv/Scripts/python.exe -m az_worker.arena --model models/az/evolution/gen_002_candidate.pt \
+  --opponent az --opponent-model models/az/current_v3.pt \
+  --games 40 --device cuda --candidate-width 16 --time-budget 2.0 \
+  --opponent-simulations 100000 --opponent-width 16 --opening-moves 2 --seed 42
+```
+
+局数不能太少，也不能关掉随机开局：温度 0 时同一对权重的对局完全确定，`--opening-moves 0` 会把 N 局压缩成 2 个棋局（实测同一对权重在无开局时 40:0，成对开局后 22:18）。8 局只能发现大缺陷（例如价值头方向错误导致 0:8）。小差异看：
 
 - 预热阶段的“验证首选一致率”；
 - 对手已有冲四时的“正确堵点比例”；
-- 固定局面的价值头符号。
+- 固定局面的价值头符号；
+- 自进化时每代的 `baseline_winrate`（见 `doc/05-az-engine.md` §9）。
 
 ### 3.3 LLM：固定局面探针
 
@@ -198,6 +208,19 @@ python -m unittest discover -s llm_worker/tests -t .
 .venv/Scripts/python.exe -m unittest discover -s az_worker/tests -t .
 ```
 
+### 5.5 AlphaZero 训练与自进化
+
+三阶段手动流程（传统教师 → 自对弈 → 擂台）见 `doc/05-az-engine.md` §11.2；持续变强用自进化：
+
+```sh
+.venv/Scripts/python.exe -m az_worker.evolve \
+  --champion models/az/current_v3.pt --out-dir models/az/evolution \
+  --generations 10 --device cuda --seed 1
+# 续跑：--resume
+```
+
+每代自动执行“蒸馏 → 自对弈训练 → 擂台判定”，产物与状态都在 `models/az/evolution/`（被 `.gitignore` 排除）：`state.json` 记录 `champion`、`learner`、`baseline` 与每代战绩，`history[].baseline_winrate` 是判断是否真的进步的主指标。训练会占满显存，建议与 Worker 分开运行。
+
 ## 6. 故障排查
 
 | 症状 | 原因 | 处理 |
@@ -213,6 +236,8 @@ python -m unittest discover -s llm_worker/tests -t .
 | AZ 用 CPU 极慢 | 未装 CUDA 版 torch | 用 `.venv` 的 cu128 wheel，设置 `AZ_DEVICE=cuda` |
 | AZ 每手固定不动 | `AZ_SIMULATIONS` 太小 | 保持 100000，让时间预算生效 |
 | AZ 0 胜 | 价值头训练目标错误 | 用 `--value-target eval` 重新预热 |
+| 擂台每局完全相同、动辄 40:0 | 温度 0 下两个网络都是确定性的，且没加随机开局 | 保持 `--opening-moves 2`，并提高 `--games` |
+| 自进化越跑越弱 | 只跟当代 champion 比，没防住代际互克 | 看 `history[].baseline_winrate`，保留 `--min-baseline-winrate`，提高擂台局数 |
 | 棋盘文字/坐标错位 | 行列为 0 基，标签是 1 基 | 显示层用 `A`–`O`/`1`–`15`，引擎/API 用 0 基 |
 | 端口占用 | 已有 MyGo 实例 | 关闭旧进程或设置 `MYGO_ADDR` |
 

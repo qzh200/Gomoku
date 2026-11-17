@@ -66,7 +66,7 @@ MyGo is a **local-first** Gomoku (Five-in-a-Row) desktop application. Go owns th
 | --- | --- | --- | --- | --- |
 | `classical` | Classical search | 6-cell window patterns + PVS + transposition table + VCF/VCT | CPU only, no external service | Stable, reproducible tactical play |
 | `llm` | Large language model | Exact threat text + 0-based coordinate prompt, JSON move parsing | OpenAI-compatible API | Explainable natural-language reasoning, prompt research |
-| `az` | AlphaZero | 7-plane residual network + PUCT MCTS, trained by self-play | Local PyTorch + weights | Learned positional intuition, long-term strategy |
+| `az` | AlphaZero | 7-plane residual network + PUCT MCTS, teacher warm start + self-play + self-evolution | Local PyTorch + weights | Learned positional intuition, long-term strategy |
 
 There is also `mock_worker/`, used only for contract tests and link diagnostics; it is not meant for real games.
 

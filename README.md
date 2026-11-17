@@ -66,7 +66,7 @@ MyGo 是一个**本地优先**的五子棋桌面应用。Go 负责唯一权威�
 | --- | --- | --- | --- | --- |
 | `classical` | 传统搜索 | 6 格窗口棋型评估 + PVS + 置换表 + VCF/VCT | 纯 CPU，无外部服务 | 稳定、可复现的战术对局 |
 | `llm` | 大语言模型 | 精确棋形文字 + 0 基坐标 Prompt，解析 JSON 落子 | OpenAI 兼容 API | 可解释的自然语言推理、Prompt 研究 |
-| `az` | AlphaZero | 7 平面残差网络 + PUCT MCTS，自对弈训练 | 本地 PyTorch + 权重 | 学习型局面直觉、长期策略 |
+| `az` | AlphaZero | 7 平面残差网络 + PUCT MCTS，教师预热 + 自对弈 + 自进化 | 本地 PyTorch + 权重 | 学习型局面直觉、长期策略 |
 
 另外提供 `mock_worker/`，只用于契约测试和链路排查，不参与正式对局。
 

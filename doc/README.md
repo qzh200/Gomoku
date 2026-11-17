@@ -33,7 +33,7 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | 传统引擎 | `classical_worker/` | 6 格窗口棋型评估 + PVS + 置换表 + VCF/VCT | 否 | `classical` |
 | LLM 引擎 | `llm_worker/` | 把精确棋形与坐标写进 Prompt，解析模型返回的 JSON | 是，OpenAI 兼容接口 | `llm` |
-| AlphaZero 引擎 | `az_worker/` | 7 平面残差网络 + PUCT MCTS，自对弈训练 | 否（推理本地） | `az` |
+| AlphaZero 引擎 | `az_worker/` | 7 平面残差网络 + PUCT MCTS，教师预热 + 自对弈 + 自进化 | 否（推理本地） | `az` |
 
 另有 `mock_worker/`，只用于契约测试和链路排查，不参与实际对局。
 
@@ -45,7 +45,7 @@ flowchart LR
 | [02-worker-protocol.md](02-worker-protocol.md) | Worker 契约、长轮询、租约、幂等、配置与令牌解析、失败处理 |
 | [03-classical-engine.md](03-classical-engine.md) | 窗口棋型、增量评估、威胁表、PVS、置换表、VCF/VCT、参数与基准 |
 | [04-llm-engine.md](04-llm-engine.md) | 棋形原语、Prompt 结构、输出解析、重试与兜底、推理模型适配 |
-| [05-az-engine.md](05-az-engine.md) | 7 平面特征、bitboard 威胁、网络、MCTS、预热、自对弈、训练与擂台 |
+| [05-az-engine.md](05-az-engine.md) | 7 平面特征、bitboard 威胁、网络、MCTS、预热/蒸馏（传统或旧权重教师）、自对弈、擂台与自进化 |
 | [06-desktop-ui.md](06-desktop-ui.md) | UI 分层、绘制几何、交互、版本冲突重试、复盘、主题 |
 | [07-comparison-and-operations.md](07-comparison-and-operations.md) | 引擎对比、评测方法、环境变量矩阵、运行手册、故障排查 |
 
