@@ -146,6 +146,12 @@ func (a *App) SecondEngineID() string {
 }
 
 func (a *App) newGame() {
+	a.mu.Lock()
+	previous := a.st.game
+	a.mu.Unlock()
+	if previous != nil && previous.Status == gomoku.StatusPlaying && previous.MoveCount == 0 {
+		_ = a.games.Delete(previous.ID)
+	}
 	mode := a.Mode()
 	engine := a.EngineID()
 	aiIsBlack := a.AIIsBlack()
@@ -312,7 +318,7 @@ func (a *App) refreshReplay() {
 	recent := make([]*gomoku.Game, 0, len(games))
 	for i := len(games) - 1; i >= 0 && len(recent) < replayLimit; i-- {
 		game := games[i]
-		if game.Status != gomoku.StatusFinished && game.ID == currentID {
+		if game.Status != gomoku.StatusFinished && (game.ID == currentID || game.MoveCount == 0) {
 			continue
 		}
 		recent = append(recent, game)
