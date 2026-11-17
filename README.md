@@ -14,9 +14,6 @@
 [![Engines](https://img.shields.io/badge/Engines-3-8957E5?style=flat-square)](#三个引擎)
 [![Status](https://img.shields.io/badge/status-active-2EA043?style=flat-square)](https://github.com/qzh200/Gomoku)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](#贡献)
-[![GitHub stars](https://img.shields.io/github/stars/qzh200/Gomoku?style=flat-square&logo=github)](https://github.com/qzh200/Gomoku/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/qzh200/Gomoku?style=flat-square&logo=github)](https://github.com/qzh200/Gomoku/network/members)
-[![Last commit](https://img.shields.io/github/last-commit/qzh200/Gomoku?style=flat-square&logo=git)](https://github.com/qzh200/Gomoku/commits/master)
 
 五子棋 · Gomoku · AlphaZero · MCTS · PVS · VCF · LLM · Go · Python · Desktop
 
