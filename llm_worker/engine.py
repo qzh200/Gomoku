@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from . import board
-from .openai_client import Answer, ChatMessage, OpenAIClient
+from .openai_client import ChatMessage, OpenAIClient
 
 
 SYSTEM_PROMPT = (
     "你在下一盘五子棋：横、竖、斜先连成五个棋子的一方获胜。"
     "棋盘 15 行 × 15 列，行号和列号都从 0 数到 14，坐标写成 (行, 列)。\n"
-    "下面会给你「我方」和「对方」全部棋子的坐标，以及对手的最后一手。"
-    "你要为「我方」下一个空点。每一手都按这个顺序判断：\n"
-    "1. 对手下一手就能连成五个子吗？能，这一手必须先挡住，下别处立刻输。\n"
-    "2. 自己这一手就能连成五个子吗？能，就下在那里，直接赢。\n"
-    "3. 对手有三子连成一线、两头都是空点吗？必须堵住一头。\n"
-    "4. 都不是，就把自己的三子接成四子，或者下在自己棋子旁边的空点。\n"
+    "下面会给你双方全部棋子的坐标，以及双方手里能成五、能成活四、能成冲四的落点，"
+    "还有对手的最后一手。你要为「我方」下一个空点。按这个顺序判断：\n"
+    "1. 我方有成五点：下在那里，直接赢。\n"
+    "2. 对方有成五点：必须挡住；对方有两个以上成五点就已经挡不住。\n"
+    "3. 我方有成活四的点：下在那里，对方挡不住，等于赢。\n"
+    "4. 对方有成活四的点：必须现在挡，否则对方下一手成活四就挡不住了。\n"
+    "5. 对方有成冲四的点：对方下一手会做成四来逼你堵；这时要么自己先成四，要么准备去堵。\n"
+    "6. 都没有：下在双方棋子旁边的空点，把自己的两子三子连起来。\n"
     '只输出 JSON：{"move": {"row": 7, "col": 7}}，不要输出其他内容。'
 )
 
@@ -49,7 +51,7 @@ class LLMEngine:
         problem = ""
         for _ in range(self.max_attempts):
             answer = self.client.complete(messages)
-            move = self._move_of(answer)
+            move = board.parse_move(answer.text)
             if move is None:
                 problem = FORMAT_HINT
             else:
@@ -71,11 +73,6 @@ class LLMEngine:
         )
         return fallback
 
-    def _move_of(self, answer: "Answer") -> tuple[int, int] | None:
-        if answer.from_reasoning:
-            return board.parse_move_strict(answer.text)
-        return board.parse_move(answer.text)
-
     def _messages(
         self,
         board_state: list[list[int]],
@@ -90,9 +87,11 @@ class LLMEngine:
             + board.stone_list(board_state, player),
             f"对方（{board.player_name(opponent)}）的棋子坐标："
             + board.stone_list(board_state, opponent),
-            board.describe_lines(board_state, player),
-            board.describe_lines(board_state, opponent),
         ]
+        lines.append("对方的棋形：")
+        lines.extend(_threat_lines(board_state, opponent))
+        lines.append("我方的棋形：")
+        lines.extend(_threat_lines(board_state, player))
         if last_move:
             side = board.player_name(last_move["player"])
             lines.append(
@@ -108,3 +107,10 @@ class LLMEngine:
             ChatMessage("system", SYSTEM_PROMPT),
             ChatMessage("user", "\n".join(lines)),
         ]
+
+
+def _threat_lines(board_state: list[list[int]], player: int) -> list[str]:
+    threats = board.describe_threats(board_state, player)
+    if not threats:
+        return ["- 没有成五、活四或冲四的落点。"]
+    return [f"- {line}" for line in threats]

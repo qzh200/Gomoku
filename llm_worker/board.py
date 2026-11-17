@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import json
-import re
 
 
 BOARD_SIZE = 15
-COLUMN_LABELS = "ABCDEFGHIJKLMNO"
 
 
 BLACK = 1
 WHITE = 2
 
 
-COORDINATE_PATTERN = re.compile(r"([A-Oa-o])\s*[-]?\s*(\d{1,2})")
+DIRECTIONS = ((0, 1), (1, 0), (1, 1), (1, -1))
 
 
 def player_name(player: int) -> str:
@@ -36,52 +34,6 @@ def stone_list(board_state: list[list[int]], player: int) -> str:
     return " ".join(cells) if cells else "（没有棋子）"
 
 
-def connected_lines(
-    board_state: list[list[int]], player: int, minimum: int = 3
-) -> list[tuple[list[tuple[int, int]], list[tuple[int, int]]]]:
-    """找出连成一线的棋子，以及两端的空点。"""
-    found: list[tuple[list[tuple[int, int]], list[tuple[int, int]]]] = []
-    seen: set[tuple] = set()
-    for row in range(BOARD_SIZE):
-        for col in range(BOARD_SIZE):
-            if row >= len(board_state) or col >= len(board_state[row]):
-                continue
-            if board_state[row][col] != player:
-                continue
-            for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
-                if in_bounds(row - dr, col - dc) and board_state[row - dr][col - dc] == player:
-                    continue
-                run = []
-                r, c = row, col
-                while in_bounds(r, c) and board_state[r][c] == player:
-                    run.append((r, c))
-                    r, c = r + dr, c + dc
-                if len(run) < minimum:
-                    continue
-                key = tuple(run)
-                if key in seen:
-                    continue
-                seen.add(key)
-                free = []
-                for er, ec in ((row - dr, col - dc), (r, c)):
-                    if in_bounds(er, ec) and board_state[er][ec] == 0:
-                        free.append((er, ec))
-                found.append((run, free))
-    return found
-
-
-def describe_lines(board_state: list[list[int]], player: int, minimum: int = 3) -> str:
-    """把连成一线的棋子写成文字，模型才读得出斜线。"""
-    parts = []
-    for run, free in connected_lines(board_state, player, minimum):
-        spots = "、".join(f"({r}, {c})" for r, c in free) if free else "两端都被堵住"
-        cells = "-".join(f"({rr}, {cc})" for rr, cc in run)
-        parts.append(f"{cells}（{len(run)} 连，延伸端：{spots}）")
-    if not parts:
-        return f"{player_name(player)}没有连成三子以上的棋子。"
-    return f"{player_name(player)}连成一线的地方：" + "；".join(parts) + "。"
-
-
 def in_bounds(row: int, col: int) -> bool:
     return 0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE
 
@@ -92,38 +44,130 @@ def is_empty(board: list[list[int]], row: int, col: int) -> bool:
     return board[row][col] == 0
 
 
-def parse_coordinate(text: str) -> tuple[int, int] | None:
-    """兼容模型用 H8 这种坐标标注作答的情况。"""
-    match = COORDINATE_PATTERN.search(text)
-    if match is None:
-        return None
-    col = COLUMN_LABELS.index(match.group(1).upper())
-    row = int(match.group(2)) - 1
-    if not in_bounds(row, col):
-        return None
-    return row, col
+def wins_with(board_state: list[list[int]], player: int, row: int, col: int) -> bool:
+    """假设 player 落在 (row, col)，这一手是否连成五子。"""
+    for dr, dc in DIRECTIONS:
+        count = 1
+        for sign in (-1, 1):
+            r, c = row + dr * sign, col + dc * sign
+            while in_bounds(r, c) and board_state[r][c] == player:
+                count += 1
+                r, c = r + dr * sign, c + dc * sign
+        if count >= 5:
+            return True
+    return False
+
+
+def five_points(board_state: list[list[int]], player: int) -> list[tuple[int, int]]:
+    """player 下在这些空点就成五。"""
+    return [
+        (row, col)
+        for row in range(BOARD_SIZE)
+        for col in range(BOARD_SIZE)
+        if board_state[row][col] == 0 and wins_with(board_state, player, row, col)
+    ]
+
+
+def four_makers(
+    board_state: list[list[int]], player: int
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    """落子后自己有几个成五点：两个以上是活四，一个就是冲四。
+
+    只检查已有棋子两格以内的空点，别处的落子连不成四。
+    """
+    open_fours: list[tuple[int, int]] = []
+    fours: list[tuple[int, int]] = []
+    for row, col in _candidates(board_state):
+        board_state[row][col] = player
+        try:
+            gained = _new_five_points(board_state, player, row, col)
+        finally:
+            board_state[row][col] = 0
+        if len(gained) >= 2:
+            open_fours.append((row, col))
+        elif len(gained) == 1:
+            fours.append((row, col))
+    return open_fours, fours
+
+
+def describe_threats(board_state: list[list[int]], player: int) -> list[str]:
+    """这一方手里有什么牌：成五点、能成活四的点、能成冲四的点。"""
+    name = player_name(player)
+
+    fives = five_points(board_state, player)
+    if len(fives) >= 2:
+        return [
+            f"{name}有 {len(fives)} 个成五点 {_spots(fives)}，落一子就成五，堵一个也挡不住。"
+        ]
+    if fives:
+        return [f"{name}下在 {_spots(fives)} 就成五。"]
+
+    lines: list[str] = []
+    open_fours, fours = four_makers(board_state, player)
+    if open_fours:
+        lines.append(
+            f"{name}下在 {_spots(open_fours)} 就成活四：之后有两个成五点，挡不住。"
+        )
+    if fours:
+        lines.append(
+            f"{name}下在 {_spots(fours, limit=4)} 就成冲四：只有一个成五点，对手必须去堵。"
+        )
+    return lines
+
+
+def _spots(cells: list[tuple[int, int]], limit: int | None = None) -> str:
+    shown = cells if limit is None or len(cells) <= limit else cells[:limit]
+    text = "、".join(f"({row}, {col})" for row, col in shown)
+    if len(shown) < len(cells):
+        text += f" 等 {len(cells)} 个点"
+    return text
+
+
+def _candidates(board_state: list[list[int]]) -> list[tuple[int, int]]:
+    cells = []
+    for row in range(BOARD_SIZE):
+        for col in range(BOARD_SIZE):
+            if board_state[row][col] != 0:
+                continue
+            if _has_stone_near(board_state, row, col):
+                cells.append((row, col))
+    return cells
+
+
+def _has_stone_near(board_state: list[list[int]], row: int, col: int) -> bool:
+    for dr in (-2, -1, 0, 1, 2):
+        for dc in (-2, -1, 0, 1, 2):
+            r, c = row + dr, col + dc
+            if in_bounds(r, c) and board_state[r][c] != 0:
+                return True
+    return False
+
+
+def _new_five_points(
+    board_state: list[list[int]], player: int, row: int, col: int
+) -> list[tuple[int, int]]:
+    """刚落下的这一子新造出哪些成五点。新的一线必然经过这一子。"""
+    found: list[tuple[int, int]] = []
+    for dr, dc in DIRECTIONS:
+        for step in range(1, 5):
+            for sign in (-1, 1):
+                r, c = row + dr * step * sign, col + dc * step * sign
+                if not in_bounds(r, c) or board_state[r][c] != 0:
+                    continue
+                if (r, c) in found:
+                    continue
+                if wins_with(board_state, player, r, c):
+                    found.append((r, c))
+    return found
 
 
 def parse_move(text: str) -> tuple[int, int] | None:
-    cell = _json_cell(text)
-    if cell is not None:
-        return cell
-    return parse_coordinate(text)
-
-
-def parse_move_strict(text: str) -> tuple[int, int] | None:
-    return _json_cell(text)
-
-
-def _json_cell(text: str) -> tuple[int, int] | None:
     payload = _json_object(text)
     if payload is None:
         return None
     value = payload.get("move")
     if isinstance(value, dict):
         return dict_to_cell(value)
-    if isinstance(value, str):
-        return parse_coordinate(value)
     row = payload.get("row")
     col = payload.get("col")
     if isinstance(row, int) and isinstance(col, int) and in_bounds(row, col):
