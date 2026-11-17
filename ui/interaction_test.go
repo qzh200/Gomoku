@@ -206,8 +206,8 @@ func TestReplayRewindsAPastGame(t *testing.T) {
 	tester := mygoui.NewTester(app.View(), 1180, 800)
 	tester.Advance(200 * time.Millisecond)
 
-	if !tester.HasText("棋局回溯") {
-		t.Fatalf("界面必须有棋局回溯面板, 实际 %v", tester.Texts())
+	if !tester.HasText("棋局记录") {
+		t.Fatalf("界面必须有棋局记录面板, 实际 %v", tester.Texts())
 	}
 	if tester.HasText(past.ID) {
 		t.Fatalf("界面不能显示棋局编号 %q", past.ID)
