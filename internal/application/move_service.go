@@ -137,9 +137,6 @@ type UndoRequest struct {
 	ExpectedVersion int
 }
 
-// Undo takes back the caller's last exchange. In human-vs-AI a single
-// stone and the AI reply above it go back together, so the human moves
-// again instead of the AI replaying its move.
 func (s *MoveService) Undo(gameID string, caller Caller, req UndoRequest) (*gomoku.Game, error) {
 	s.coord.Lock()
 	defer s.coord.Unlock()

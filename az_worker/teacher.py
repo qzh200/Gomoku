@@ -33,11 +33,6 @@ def collect_one_game(
     score_scale: float,
     value_target: str,
 ) -> list[Example]:
-    """用传统引擎下一整局，把每一步的样本记下来。
-
-    这个函数放在独立模块里，多进程收集时才能被子进程按名字导入
-    （Windows 的 spawn 没法重新导入 __main__）。
-    """
     searcher = Searcher(depth=depth, width=width, time_budget=time_budget)
     examples: list[Example] = []
     board = Board()

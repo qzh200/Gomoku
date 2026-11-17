@@ -84,7 +84,6 @@ def _mark(plane: np.ndarray, mask: int) -> None:
 
 
 def as_planes(value) -> np.ndarray:
-    """把旧存档里的嵌套列表统一成 (平面数, 15, 15) 的数组。"""
     array = np.asarray(value, dtype=np.float32)
     if array.shape != (PLANE_COUNT, BOARD_SIZE, BOARD_SIZE):
         raise ValueError(

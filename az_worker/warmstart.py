@@ -95,7 +95,6 @@ def _collect_parallel(
     payload: tuple,
     workers: int,
 ) -> list[Example]:
-    """老师的搜索是纯 CPU 的，多进程并行收集，显卡才能在训练阶段吃饱。"""
     collected: list[list[Example]] = []
     with ProcessPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(collect_one_game, *payload) for _ in range(games)]

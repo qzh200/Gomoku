@@ -123,7 +123,6 @@ class LLMEngine:
 
 
 def _this_move(mine: board.Threats, theirs: board.Threats, player: int) -> list[str]:
-    """这一手该怎么下，由成五点/活四点决定，写成一句话。"""
     name = board.player_name(player)
     if mine.fives:
         return [f"这一手：{name}下在 {board.spots(mine.fives)} 就成五，立刻获胜。"]

@@ -23,7 +23,6 @@ def opponent_of(player: int) -> int:
 
 
 def stone_list(board_state: list[list[int]], player: int) -> str:
-    """把一方的棋子写成 (行, 列) 列表，行号和列号都从 0 数起。"""
     cells = [
         f"({row}, {col})"
         for row in range(BOARD_SIZE)
@@ -46,7 +45,6 @@ def is_empty(board: list[list[int]], row: int, col: int) -> bool:
 
 
 def wins_with(board_state: list[list[int]], player: int, row: int, col: int) -> bool:
-    """假设 player 落在 (row, col)，这一手是否连成五子。"""
     for dr, dc in DIRECTIONS:
         count = 1
         for sign in (-1, 1):
@@ -60,7 +58,6 @@ def wins_with(board_state: list[list[int]], player: int, row: int, col: int) -> 
 
 
 def five_points(board_state: list[list[int]], player: int) -> list[tuple[int, int]]:
-    """player 下在这些空点就成五。"""
     return [
         (row, col)
         for row in range(BOARD_SIZE)
@@ -72,10 +69,6 @@ def five_points(board_state: list[list[int]], player: int) -> list[tuple[int, in
 def four_makers(
     board_state: list[list[int]], player: int
 ) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
-    """落子后自己有几个成五点：两个以上是活四，一个就是冲四。
-
-    只检查已有棋子两格以内的空点，别处的落子连不成四。
-    """
     open_fours: list[tuple[int, int]] = []
     fours: list[tuple[int, int]] = []
     for row, col in _candidates(board_state):
@@ -92,8 +85,6 @@ def four_makers(
 
 
 class Threats(NamedTuple):
-    """一方的成五点、活四点、冲四点、双活三点。越靠前越强。"""
-
     fives: list[tuple[int, int]]
     open_fours: list[tuple[int, int]]
     fours: list[tuple[int, int]]
@@ -138,7 +129,6 @@ def describe(found: Threats, player: int) -> list[str]:
 
 
 def double_threes(board_state: list[list[int]], player: int) -> list[tuple[int, int]]:
-    """落子后同时有两个以上活四点：双活三，对手挡不住。"""
     found: list[tuple[int, int]] = []
     for row, col in _candidates(board_state):
         board_state[row][col] = player
@@ -156,7 +146,6 @@ def double_threes(board_state: list[list[int]], player: int) -> list[tuple[int, 
 def _open_four_makers_near(
     board_state: list[list[int]], player: int, row: int, col: int
 ) -> list[tuple[int, int]]:
-    """刚落下的这一子造出哪些活四点。活四点必然和这一子在同一线上。"""
     found: list[tuple[int, int]] = []
     for dr, dc in DIRECTIONS:
         for step in range(1, 5):
@@ -207,7 +196,6 @@ def _has_stone_near(board_state: list[list[int]], row: int, col: int) -> bool:
 def _new_five_points(
     board_state: list[list[int]], player: int, row: int, col: int
 ) -> list[tuple[int, int]]:
-    """刚落下的这一子新造出哪些成五点。新的一线必然经过这一子。"""
     found: list[tuple[int, int]] = []
     for dr, dc in DIRECTIONS:
         for step in range(1, 5):
@@ -251,7 +239,6 @@ def _json_object(text: str) -> dict | None:
 
 
 def fallback_cell(board_state: list[list[int]]) -> tuple[int, int] | None:
-    """模型不配合时兜底：优先挨着棋子的空点，其次离中心最近的空点。"""
     best: tuple[int, int] | None = None
     best_score: tuple[int, int] | None = None
     for row in range(BOARD_SIZE):

@@ -398,8 +398,6 @@ class SettingsTests(unittest.TestCase):
 
 
 class ThreatTests(unittest.TestCase):
-    """威胁平面必须和逐格枚举的结果一致。"""
-
     DIRECTIONS = ((0, 1), (1, 0), (1, 1), (1, -1))
 
     def _windows_through(self, row: int, col: int, dr: int, dc: int, length: int):

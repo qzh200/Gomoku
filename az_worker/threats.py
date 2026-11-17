@@ -22,7 +22,6 @@ DIRECTIONS = (1, STRIDE, STRIDE + 1, STRIDE - 1)
 
 
 def board_masks(board, player: int) -> tuple[int, int, int]:
-    """己方、对方、空格的位棋盘。"""
     own = 0
     other = 0
     for row, col, stone in board.stones:
@@ -35,7 +34,6 @@ def board_masks(board, player: int) -> tuple[int, int, int]:
 
 
 def _products(values: list[int]) -> tuple[list[int], list[int]]:
-    """前缀与后缀的按位与，用来一次算出“除了某个位置以外全是己方棋子”。"""
     count = len(values)
     prefix = [ALL_BITS] * (count + 1)
     suffix = [ALL_BITS] * (count + 1)
@@ -47,7 +45,6 @@ def _products(values: list[int]) -> tuple[list[int], list[int]]:
 
 
 def threat_masks(own: int, other: int, empty: int) -> tuple[int, int, int, int]:
-    """己方成五点、对方成五点、己方成活四点、对方成活四点。"""
     self_five = 0
     other_five = 0
     self_four = 0

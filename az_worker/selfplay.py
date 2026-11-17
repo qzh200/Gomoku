@@ -126,7 +126,6 @@ def train_gpu(
     rng: random.Random | None = None,
     log: bool = False,
 ) -> list[float]:
-    """数据、采样和增广都在显卡上做的训练循环。"""
     picker = rng or random.Random(0)
     losses: list[float] = []
     for _ in range(steps):

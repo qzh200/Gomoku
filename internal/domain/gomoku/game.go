@@ -136,8 +136,6 @@ func (g *Game) History() []Move {
 	return out
 }
 
-// Undo removes the last move and rebuilds the position before it. The
-// version keeps moving forward so stale claims and clients stay stale.
 func (g *Game) Undo() bool {
 	if len(g.moves) == 0 {
 		return false

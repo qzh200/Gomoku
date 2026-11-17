@@ -125,7 +125,6 @@ def _count_blocks(state: dict) -> int:
 
 
 def _expand_stem(state: dict) -> dict:
-    """旧权重只有三个平面，威胁平面对应的输入通道补零，行为保持不变。"""
     weight = state.get("stem.weight")
     if weight is None or weight.shape[1] == PLANE_COUNT:
         return state

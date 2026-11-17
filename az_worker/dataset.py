@@ -14,12 +14,6 @@ PERMUTATION_TABLE = torch.from_numpy(np.stack(CELL_PERMUTATIONS).astype(np.int64
 
 
 class TensorDataset:
-    """训练数据全部放在显卡上，采样和对称增广也在显卡里做。
-
-    增广用同一个格子置换表：每个平面摊平成 225 格后，
-    八种对称变换都只是对格子的一个置换，策略和合法掩码同理。
-    """
-
     def __init__(self, device: torch.device, capacity: int = 60_000) -> None:
         self.device = device
         self.capacity = max(1, capacity)
@@ -69,7 +63,6 @@ class TensorDataset:
         self.count = end
 
     def merge(self, other: "TensorDataset") -> None:
-        """把另一个数据集并进来，样本留在显卡上。"""
         count = len(other)
         if count == 0:
             return

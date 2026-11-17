@@ -6,9 +6,6 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
-// palette follows the warm, paper-like surfaces of the Onevra component
-// gallery: an off-white canvas, raised white cards, hairline warm borders and
-// a terracotta accent.
 type palette struct {
 	canvas       mygo.Color
 	surface      mygo.Color
@@ -65,27 +62,22 @@ const (
 	controlRad  = 9.0
 )
 
-// panel is one raised card. Callers add their own column inside it.
 func panel(c *mygo.Context) mygo.Element {
 	p := paletteOf(theme.TokensOf(c))
 	return mygo.Box(c).Padding(16).Radius(panelRadius).
 		Background(p.surface).Border(1, p.border)
 }
 
-// groupLabel is the small muted heading above a group of controls.
 func groupLabel(c *mygo.Context, text string) {
 	p := paletteOf(theme.TokensOf(c))
 	mygo.Text(c, text).FontSize(14).FontWeight(600).TextColor(p.muted).LetterSpacing(0.2)
 }
 
-// fieldLabel names an individual control.
 func fieldLabel(c *mygo.Context, text string) {
 	p := paletteOf(theme.TokensOf(c))
 	mygo.Text(c, text).FontSize(13).FontWeight(500).TextColor(p.faint)
 }
 
-// segmented is the pill switch of the reference: a soft track whose chosen
-// segment lifts onto the card surface.
 func segmented(c *mygo.Context, selected *int, options []string) {
 	p := paletteOf(theme.TokensOf(c))
 	parts := mygo.SegmentedBase(c, selected, len(options))
@@ -114,7 +106,6 @@ func segmented(c *mygo.Context, selected *int, options []string) {
 	})
 }
 
-// primaryButton is the filled accent call to action.
 func primaryButton(c *mygo.Context, icon *mygo.SVG, label string) mygo.Element {
 	p := paletteOf(theme.TokensOf(c))
 	b := mygo.ButtonBase(c).Height(42).PaddingX(16).Radius(controlRad).Cursor(mygo.CursorPointer)
@@ -132,7 +123,6 @@ func primaryButton(c *mygo.Context, icon *mygo.SVG, label string) mygo.Element {
 	return b
 }
 
-// ghostButton is the bordered card-colored secondary action.
 func ghostButton(c *mygo.Context, icon *mygo.SVG, label string) mygo.Element {
 	p := paletteOf(theme.TokensOf(c))
 	b := mygo.ButtonBase(c).Height(40).PaddingX(14).Radius(controlRad).Cursor(mygo.CursorPointer)
@@ -154,7 +144,6 @@ func buttonContent(c *mygo.Context, icon *mygo.SVG, label string, color mygo.Col
 	})
 }
 
-// chip is a soft pill with a colored status dot.
 func chip(c *mygo.Context, text string, dot mygo.Color) {
 	p := paletteOf(theme.TokensOf(c))
 	mygo.Row(c).Gap(8).Height(32).Padding(0, 12).Radius(16).
@@ -164,7 +153,6 @@ func chip(c *mygo.Context, text string, dot mygo.Color) {
 	})
 }
 
-// noticeRow is a tinted inline message with a leading icon.
 func noticeRow(c *mygo.Context, icon *mygo.SVG, text string, color mygo.Color) {
 	row := mygo.Row(c).Gap(9).Padding(9, 11).Radius(9).AlignItems(mygo.Center)
 	row.Background(color.Alpha(0.10)).Border(1, color.Alpha(0.24)).TextColor(color)
@@ -174,7 +162,6 @@ func noticeRow(c *mygo.Context, icon *mygo.SVG, text string, color mygo.Color) {
 	})
 }
 
-// tinyTag is the result badge between records.
 func tinyTag(c *mygo.Context, text string, color mygo.Color) {
 	mygo.Row(c).Padding(2, 8).Radius(999).Background(color.Alpha(0.12)).
 		Border(1, color.Alpha(0.25)).Children(func() {
@@ -197,7 +184,6 @@ func tagColor(c display.TagColor) mygo.Color {
 	return p.faint
 }
 
-// emptyHint fills a list that has nothing in it yet.
 func emptyHint(c *mygo.Context, text string) {
 	p := paletteOf(theme.TokensOf(c))
 	box := mygo.Box(c).Padding(14, 12).Radius(9).Border(1, p.border).AlignItems(mygo.Center)
@@ -206,7 +192,6 @@ func emptyHint(c *mygo.Context, text string) {
 	})
 }
 
-// stoneColors returns the fill gradient ends of a stone for the given player.
 func stoneColors(playerIsBlack bool, tk *theme.Tokens) (light, dark mygo.Color) {
 	if tk != nil && tk.Dark {
 		if playerIsBlack {
