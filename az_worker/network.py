@@ -74,23 +74,6 @@ def evaluate(
     return probabilities.cpu().numpy(), values.cpu().numpy()
 
 
-def train_batch(
-    model: GomokuNet,
-    optimizer: torch.optim.Optimizer,
-    planes: np.ndarray,
-    policies: np.ndarray,
-    values: np.ndarray,
-    legal: np.ndarray,
-    device: torch.device,
-) -> tuple[float, float, float]:
-    model.train()
-    batch = torch.from_numpy(np.ascontiguousarray(planes)).to(device)
-    target_policy = torch.from_numpy(np.ascontiguousarray(policies)).to(device)
-    target_value = torch.from_numpy(np.ascontiguousarray(values)).to(device)
-    mask = torch.from_numpy(np.ascontiguousarray(legal)).to(device)
-    return train_tensors(model, optimizer, batch, target_policy, target_value, mask)
-
-
 def train_tensors(
     model: GomokuNet,
     optimizer: torch.optim.Optimizer,

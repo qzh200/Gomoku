@@ -11,6 +11,7 @@ from az_worker.board import BLACK, WHITE, Board
 from az_worker.config import Settings
 from az_worker.engine import AlphaZeroEngine, EngineError
 from az_worker.features import (
+    CELL_PERMUTATIONS,
     PLANE_COUNT,
     PLANE_LAST,
     PLANE_OTHER,
@@ -22,12 +23,10 @@ from az_worker.features import (
     TRANSFORMS,
     encode,
     legal_mask,
-    transform_planes,
-    transform_policy,
 )
 from az_worker.mcts import MCTS, Node, cell_of, row_col_of
 from az_worker.network import ACTION_COUNT, GomokuNet, load_model
-from az_worker.selfplay import Example, ReplayBuffer, SelfPlay, augment, train
+from az_worker.selfplay import SelfPlay
 
 DEVICE = torch.device("cpu")
 
@@ -49,6 +48,15 @@ def permute_cell(cell: tuple[int, int], index: int) -> tuple[int, int]:
     return row, col
 
 
+def permute_planes(planes: np.ndarray, index: int) -> np.ndarray:
+    flat = planes.reshape(planes.shape[0], 15 * 15)
+    return flat[:, CELL_PERMUTATIONS[index]].reshape(planes.shape)
+
+
+def permute_policy(policy: np.ndarray, index: int) -> np.ndarray:
+    return policy[CELL_PERMUTATIONS[index]]
+
+
 def permute_board(position: Board, index: int) -> Board:
     forward, _ = TRANSFORMS[index]
     grid = [[0] * 15 for _ in range(15)]
@@ -59,14 +67,6 @@ def permute_board(position: Board, index: int) -> Board:
 
 
 class BoardTests(unittest.TestCase):
-    def test_play_and_undo_restore_the_board(self) -> None:
-        position = Board(board([(7, 7, BLACK)]))
-        position.play(7, 8, WHITE)
-        self.assertEqual(position.grid[7][8], WHITE)
-        position.undo()
-        self.assertEqual(position.grid[7][8], 0)
-        self.assertEqual(len(position.stones), 1)
-
     def test_recognises_a_five(self) -> None:
         position = Board(board([(7, 7, BLACK), (7, 8, BLACK), (7, 9, BLACK), (7, 10, BLACK)]))
         self.assertTrue(position.wins_with(7, 6, BLACK))
@@ -144,7 +144,7 @@ class FeatureTests(unittest.TestCase):
         position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
         planes = encode(position, BLACK, None)
         for index in range(8):
-            turned = transform_planes(planes, index)
+            turned = permute_planes(planes, index)
             stones = sum(1 for plane in turned for row in plane for value in row if value)
             self.assertEqual(stones, 2, index)
 
@@ -154,7 +154,7 @@ class FeatureTests(unittest.TestCase):
         )
         planes = encode(position, BLACK, (7, 9))
         for index in range(8):
-            turned = transform_planes(planes, index)
+            turned = permute_planes(planes, index)
             moved = permute_board(position, index)
             expected = encode(moved, BLACK, permute_cell((7, 9), index))
             np.testing.assert_allclose(turned, expected, err_msg=str(index))
@@ -162,7 +162,7 @@ class FeatureTests(unittest.TestCase):
     def test_the_policy_follows_the_symmetry(self) -> None:
         policy = np.zeros(ACTION_COUNT, dtype=np.float32)
         policy[cell_of(7, 7)] = 1.0
-        turned = transform_policy(policy, 1)
+        turned = permute_policy(policy, 1)
         self.assertAlmostEqual(float(turned.sum()), 1.0, places=5)
         self.assertEqual(int(np.argmax(turned)), cell_of(7, 14 - 7))
 
@@ -375,51 +375,6 @@ class SelfPlayTests(unittest.TestCase):
         values = {example.value for example in game.examples}
         self.assertIn(1.0, values)
         self.assertIn(-1.0, values)
-
-    def test_the_augmentation_keeps_the_stones(self) -> None:
-        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
-        policy = np.zeros(ACTION_COUNT, dtype=np.float32)
-        policy[cell_of(7, 7)] = 1.0
-        example = Example(
-            planes=encode(position, BLACK, None),
-            policy=policy,
-            legal=legal_mask(position, 2),
-            value=1.0,
-        )
-        rng = random.Random(3)
-        for _ in range(10):
-            planes, policy, legal = augment(example, rng)
-            self.assertAlmostEqual(float(policy.sum()), 1.0, places=5)
-            self.assertAlmostEqual(
-                float(legal.sum()), float(example.legal.sum()), places=5
-            )
-
-    def test_the_training_lowers_the_loss(self) -> None:
-        model = small_model()
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-        position = Board(board([(7, 7, BLACK), (7, 8, WHITE)]))
-        policy = np.zeros(ACTION_COUNT, dtype=np.float32)
-        policy[cell_of(7, 8)] = 1.0
-        example = Example(
-            planes=encode(position, BLACK, None),
-            policy=policy,
-            legal=legal_mask(position, 2),
-            value=1.0,
-        )
-        buffer = ReplayBuffer(capacity=10)
-        for _ in range(20):
-            buffer.add(example)
-        losses = train(
-            model,
-            optimizer,
-            buffer,
-            DEVICE,
-            steps=30,
-            batch_size=8,
-            augment_data=False,
-            rng=random.Random(1),
-        )
-        self.assertLess(losses[-1], losses[0])
 
 
 class SettingsTests(unittest.TestCase):

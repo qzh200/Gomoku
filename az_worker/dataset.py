@@ -35,9 +35,6 @@ class TensorDataset:
     def __len__(self) -> int:
         return self.count
 
-    def add(self, example: Example) -> None:
-        self.extend([example])
-
     def extend(self, examples: list[Example]) -> None:
         if not examples:
             return

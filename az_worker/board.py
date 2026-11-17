@@ -17,7 +17,7 @@ def other(player: int) -> int:
 
 
 class Board:
-    __slots__ = ("grid", "_stones", "_moves")
+    __slots__ = ("grid", "_stones")
 
     def __init__(self, rows: list[list[int]] | None = None) -> None:
         self.grid = [[EMPTY] * BOARD_SIZE for _ in range(BOARD_SIZE)]
@@ -26,9 +26,6 @@ class Board:
                 for col, value in enumerate(values[:BOARD_SIZE]):
                     self.grid[row][col] = int(value)
         self._stones: list[tuple[int, int, int]] = []
-
-
-        self._moves: list[tuple[int, int, int]] = []
         for row in range(BOARD_SIZE):
             for col in range(BOARD_SIZE):
                 player = self.grid[row][col]
@@ -43,24 +40,14 @@ class Board:
         clone = Board.__new__(Board)
         clone.grid = [row[:] for row in self.grid]
         clone._stones = self._stones[:]
-        clone._moves = self._moves[:]
         return clone
-
 
     def play(self, row: int, col: int, player: int) -> bool:
         if self.grid[row][col] != EMPTY:
             raise ValueError(f"格 ({row},{col}) 已有棋子")
         self.grid[row][col] = player
         self._stones.append((row, col, player))
-        self._moves.append((row, col, player))
         return self._makes_five(row, col, player)
-
-    def undo(self) -> None:
-        if not self._moves:
-            raise ValueError("没有可撤销的着法")
-        row, col, _ = self._moves.pop()
-        self._stones.pop()
-        self.grid[row][col] = EMPTY
 
 
     def _makes_five(self, row: int, col: int, player: int) -> bool:
@@ -87,10 +74,6 @@ class Board:
 
     def is_full(self) -> bool:
         return len(self._stones) >= BOARD_CELLS
-
-    def move_count(self) -> int:
-        return len(self._stones)
-
 
     def candidates(self, radius: int = 2) -> list[tuple[int, int]]:
         if not self._stones:

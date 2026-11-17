@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import torch
 
 from .board import BLACK, Board, other
-from .features import TRANSFORMS, encode, legal_mask, transform_planes, transform_policy
+from .features import encode, legal_mask
 from .mcts import MCTS, row_col_of
-from .network import GomokuNet, save, train_batch, train_tensors
+from .network import GomokuNet, save, train_tensors
 
 
 DEFAULT_TEMPERATURE_MOVES = 12
@@ -27,34 +27,6 @@ class Example:
     value: float = 0.0
 
     teacher_cell: int = -1
-
-
-@dataclass
-class ReplayBuffer:
-    examples: list[Example] = field(default_factory=list)
-    capacity: int = 60_000
-
-    def add(self, example: Example) -> None:
-        self.examples.append(example)
-        if len(self.examples) > self.capacity:
-            del self.examples[: len(self.examples) - self.capacity]
-
-    def sample(self, count: int, rng: random.Random) -> list[Example]:
-        if not self.examples:
-            return []
-        count = min(count, len(self.examples))
-        return rng.sample(self.examples, count)
-
-    def save(self, path: str | Path) -> None:
-        target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(self.examples, str(target))
-
-    def load(self, path: str | Path) -> None:
-        source = Path(path)
-        if not source.is_file():
-            return
-        self.examples = list(torch.load(str(source), weights_only=False))
 
 
 @dataclass
@@ -78,14 +50,9 @@ class SelfPlay:
         dirichlet_weight: float = 0.25,
         seed: int | None = None,
     ) -> None:
-        self.model = model
-        self.device = device
         self.simulations = simulations
-        self.batch_size = batch_size
         self.candidate_radius = candidate_radius
         self.temperature_moves = temperature_moves
-        self.dirichlet_alpha = dirichlet_alpha
-        self.dirichlet_weight = dirichlet_weight
         self.rng = random.Random(seed)
         self.searcher = MCTS(
             model,
@@ -141,70 +108,6 @@ class SelfPlay:
                 example.value = 1.0 if winner == side else -1.0
 
         return GameResult(winner, len(examples), examples)
-
-
-def augment(
-    example: Example, rng: random.Random
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    index = rng.randrange(len(TRANSFORMS))
-    if index == 0:
-        return example.planes, example.policy, example.legal
-    planes = transform_planes(example.planes, index)
-    policy = transform_policy(example.policy, index)
-    legal = transform_policy(example.legal, index)
-    return planes, policy, legal
-
-
-def train(
-    model: GomokuNet,
-    optimizer: torch.optim.Optimizer,
-    buffer: ReplayBuffer,
-    device: torch.device,
-    steps: int = 200,
-    batch_size: int = 256,
-    augment_data: bool = DEFAULT_AUGMENT,
-    rng: random.Random | None = None,
-    log: bool = False,
-) -> list[float]:
-    picker = rng or random.Random(0)
-    losses: list[float] = []
-    for _ in range(steps):
-        batch = buffer.sample(batch_size, picker)
-        if not batch:
-            break
-        planes = []
-        policies = []
-        values = []
-        legal = []
-        for example in batch:
-            if augment_data:
-                item_planes, item_policy, item_legal = augment(example, picker)
-            else:
-                item_planes, item_policy, item_legal = (
-                    example.planes,
-                    example.policy,
-                    example.legal,
-                )
-            planes.append(item_planes)
-            policies.append(item_policy)
-            legal.append(item_legal)
-            values.append(example.value)
-        loss, policy_loss, value_loss = train_batch(
-            model,
-            optimizer,
-            np.stack(planes),
-            np.stack(policies),
-            np.array(values, dtype=np.float32),
-            np.stack(legal),
-            device,
-        )
-        losses.append(loss)
-        if log and len(losses) % 20 == 0:
-            print(
-                f"  损失 {loss:.4f}（策略 {policy_loss:.4f}，价值 {value_loss:.4f}）",
-                flush=True,
-            )
-    return losses
 
 
 def save_checkpoint(model: GomokuNet, path: str | Path) -> None:

@@ -40,7 +40,6 @@ class AlphaZeroEngine:
         self.device = self._resolve_device(device)
         self.simulations = max(1, simulations)
         self.temperature = temperature
-        self.candidate_radius = candidate_radius
         self.time_budget = time_budget
 
         if self.model_path.is_file():

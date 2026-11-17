@@ -110,17 +110,6 @@ def encode(board, player: int, last_move: tuple[int, int] | None) -> np.ndarray:
     return planes
 
 
-def transform_planes(planes: np.ndarray, index: int) -> np.ndarray:
-    permutation = CELL_PERMUTATIONS[index]
-    count = planes.shape[0]
-    flat = planes.reshape(count, BOARD_SIZE * BOARD_SIZE)
-    return flat[:, permutation].reshape(planes.shape)
-
-
-def transform_policy(policy: np.ndarray, index: int) -> np.ndarray:
-    return policy[CELL_PERMUTATIONS[index]]
-
-
 def legal_mask(board, radius: int = 1) -> np.ndarray:
     mask = np.zeros(BOARD_SIZE * BOARD_SIZE, dtype=np.float32)
     for row, col in board.candidates(radius):

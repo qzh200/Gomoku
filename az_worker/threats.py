@@ -21,10 +21,6 @@ for _row in range(BOARD_SIZE):
 DIRECTIONS = (1, STRIDE, STRIDE + 1, STRIDE - 1)
 
 
-def bit_of(row: int, col: int) -> int:
-    return 1 << (row * STRIDE + col)
-
-
 def board_masks(board, player: int) -> tuple[int, int, int]:
     """己方、对方、空格的位棋盘。"""
     own = 0
