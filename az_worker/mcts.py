@@ -149,6 +149,7 @@ class MCTS:
         time_budget: float | None = None,
         seed: int | None = None,
         evaluator=None,
+        radius: int = 0,
     ) -> None:
         self.model = model
         self.device = device
@@ -160,6 +161,7 @@ class MCTS:
         self.batch_size = max(1, batch_size)
         self.time_budget = time_budget
         self.rng = random.Random(seed)
+        self.radius = max(0, int(radius))
 
     def search(
         self,
@@ -205,7 +207,7 @@ class MCTS:
                 if len(pending) >= self.batch_size:
                     self._flush(pending)
                     waiting.clear()
-            if deadline is not None and done % 16 == 0 and time.monotonic() >= deadline:
+            if deadline is not None and time.monotonic() >= deadline:
                 break
 
         if pending:
@@ -240,10 +242,17 @@ class MCTS:
             self._backpropagate(path, float(value))
         pending.clear()
 
+    def _moves(self, board: Board) -> list[tuple[int, int]]:
+        if self.radius <= 0:
+            return board.empty_cells()
+        moves = board.candidates(self.radius)
+        return moves if moves else board.empty_cells()
+
     def _expand(self, node: Node, policy: np.ndarray) -> None:
         node.expanded = True
         board = node.board
-        moves = board.empty_cells()
+        moves = self._moves(board)
+        empty_cells = board.empty_cells()
         if not moves:
             node.terminal_value = 0.0
             return
@@ -256,7 +265,7 @@ class MCTS:
             priors = [prior / total for prior in priors]
         own, _, empty = board_masks(board, node.player)
         wins = five_mask(own, empty)
-        terminal = len(moves) == 1
+        terminal = len(empty_cells) == 1
         for (row, col), prior in zip(moves, priors):
             child = Node(None, other(node.player), parent=node, move=(row, col))
             child.prior = prior

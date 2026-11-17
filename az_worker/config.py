@@ -16,6 +16,7 @@ DEFAULT_VCF_BUDGET = 0.25
 DEFAULT_VCT_BUDGET = 0.25
 DEFAULT_SOLVER_DEPTH = 10
 DEFAULT_SOLVER_NODES = 4_000
+DEFAULT_CANDIDATE_RADIUS = 0
 
 
 ENV_MODEL_PATH = "AZ_MODEL_PATH"
@@ -28,6 +29,7 @@ ENV_VCF_BUDGET = "AZ_VCF_BUDGET"
 ENV_VCT_BUDGET = "AZ_VCT_BUDGET"
 ENV_SOLVER_DEPTH = "AZ_SOLVER_DEPTH"
 ENV_SOLVER_NODES = "AZ_SOLVER_NODES"
+ENV_CANDIDATE_RADIUS = "AZ_CANDIDATE_RADIUS"
 
 
 DEFAULT_ENGINE_ID = "az"
@@ -46,6 +48,7 @@ class Settings:
     vct_budget: float
     solver_depth: int
     solver_nodes: int
+    candidate_radius: int
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -85,4 +88,5 @@ class Settings:
             vct_budget=number(ENV_VCT_BUDGET, DEFAULT_VCT_BUDGET),
             solver_depth=integer(ENV_SOLVER_DEPTH, DEFAULT_SOLVER_DEPTH),
             solver_nodes=integer(ENV_SOLVER_NODES, DEFAULT_SOLVER_NODES),
+            candidate_radius=integer(ENV_CANDIDATE_RADIUS, DEFAULT_CANDIDATE_RADIUS),
         )

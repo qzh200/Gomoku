@@ -137,6 +137,7 @@ Prompt 改动必须重跑这组探针；只看一局完整对局会被随机性�
 | `AZ_VCT_BUDGET` | 0.25 |
 | `AZ_SOLVER_DEPTH` | 10 |
 | `AZ_SOLVER_NODES` | 4000 |
+| `AZ_CANDIDATE_RADIUS` | 0 |
 
 每局 `config` 可以覆盖的键：
 

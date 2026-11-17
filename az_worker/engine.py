@@ -7,6 +7,7 @@ import torch
 
 from .board import Board, other
 from .config import (
+    DEFAULT_CANDIDATE_RADIUS,
     DEFAULT_MODEL_PATH,
     DEFAULT_SIMULATIONS,
     DEFAULT_SOLVER_DEPTH,
@@ -20,6 +21,10 @@ from .vcf import VCF, VCT, winning_move
 
 
 DEFAULT_TEMPERATURE = 0.0
+
+SOLVER_SHARE = 0.4
+
+MIN_SEARCH_TIME = 0.05
 
 
 class EngineError(RuntimeError):
@@ -40,6 +45,7 @@ class AlphaZeroEngine:
         solver_depth: int = DEFAULT_SOLVER_DEPTH,
         solver_nodes: int = DEFAULT_SOLVER_NODES,
         seed: int | None = None,
+        radius: int = DEFAULT_CANDIDATE_RADIUS,
     ) -> None:
         self.model_path = Path(model_path)
         self.device = self._resolve_device(device)
@@ -50,6 +56,7 @@ class AlphaZeroEngine:
         self.vct_budget = max(0.0, vct_budget)
         self.solver_depth = solver_depth
         self.solver_nodes = solver_nodes
+        self.radius = max(0, int(radius))
 
         if self.model_path.is_file():
             self.model = load_model(str(model_path), self.device)
@@ -63,6 +70,7 @@ class AlphaZeroEngine:
             batch_size=batch_size,
             time_budget=time_budget,
             seed=seed,
+            radius=self.radius,
         )
 
     @staticmethod
@@ -98,32 +106,43 @@ class AlphaZeroEngine:
         if forced is not None:
             return forced
 
-        if self.vcf_budget > 0:
-            move = winning_move(
-                position,
-                player,
-                self.vcf_budget,
-                VCF,
-                self.solver_depth,
-                self.solver_nodes,
-            )
-            if move is not None:
-                return move
-        if self.vct_budget > 0:
-            move = winning_move(
-                position,
-                player,
-                self.vct_budget,
-                VCT,
-                self.solver_depth,
-                self.solver_nodes,
-            )
-            if move is not None:
-                return move
+        def remaining() -> float | None:
+            if self.time_budget is None:
+                return None
+            return max(0.0, self.time_budget - (time.monotonic() - started))
 
-        budget = self.time_budget
+        if self.vcf_budget > 0:
+            left = remaining()
+            share = self.vcf_budget if left is None else min(self.vcf_budget, left * SOLVER_SHARE)
+            if share > 0:
+                move = winning_move(
+                    position,
+                    player,
+                    share,
+                    VCF,
+                    self.solver_depth,
+                    self.solver_nodes,
+                )
+                if move is not None:
+                    return move
+        if self.vct_budget > 0:
+            left = remaining()
+            share = self.vct_budget if left is None else min(self.vct_budget, left * SOLVER_SHARE)
+            if share > 0:
+                move = winning_move(
+                    position,
+                    player,
+                    share,
+                    VCT,
+                    self.solver_depth,
+                    self.solver_nodes,
+                )
+                if move is not None:
+                    return move
+
+        budget = remaining()
         if budget is not None:
-            budget = max(0.05, budget - (time.monotonic() - started))
+            budget = max(MIN_SEARCH_TIME, budget)
         result = self.searcher.search(
             position,
             player,

@@ -50,6 +50,7 @@ from az_worker.selfplay import (
 )
 from az_worker.threats import board_masks, five_mask, open_three_mask, threat_masks
 from az_worker.train import (
+    SIMULATIONS_SCHEDULE,
     append_iteration_log,
     learning_rate,
     plan_games,
@@ -479,6 +480,18 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(set(picks), {0, 1, 2})
         self.assertEqual(result.sampled_move(0.0, rng), 2)
 
+    def test_the_search_opens_only_the_candidate_cells(self) -> None:
+        position = Board(board_of([(7, 7, BLACK), (7, 8, WHITE)]))
+        flat = np.full(ACTION_COUNT, 1.0 / ACTION_COUNT, dtype=np.float32)
+        narrow = Node(position, BLACK)
+        MCTS(small_model(), DEVICE, radius=2)._expand(narrow, flat)
+        expected = {cell_of(row, col) for row, col in position.candidates(2)}
+        self.assertEqual(set(narrow.children), expected)
+        self.assertLess(len(narrow.children), 225)
+        wide = Node(position, BLACK)
+        MCTS(small_model(), DEVICE)._expand(wide, flat)
+        self.assertEqual(len(wide.children), len(position.empty_cells()))
+
 
 class SelfPlayTests(unittest.TestCase):
     def test_a_game_produces_examples(self) -> None:
@@ -517,12 +530,13 @@ class ScheduleTests(unittest.TestCase):
 
     def test_the_simulations_ramp_in_thirds(self) -> None:
         total = 25_000
-        self.assertEqual(simulations_for(0, total), 128)
-        self.assertEqual(simulations_for(8_332, total), 128)
-        self.assertEqual(simulations_for(8_334, total), 256)
-        self.assertEqual(simulations_for(16_666, total), 256)
-        self.assertEqual(simulations_for(16_667, total), 400)
-        self.assertEqual(simulations_for(24_999, total), 400)
+        low, mid, high = SIMULATIONS_SCHEDULE
+        self.assertEqual(simulations_for(0, total), low)
+        self.assertEqual(simulations_for(8_332, total), low)
+        self.assertEqual(simulations_for(8_334, total), mid)
+        self.assertEqual(simulations_for(16_666, total), mid)
+        self.assertEqual(simulations_for(16_667, total), high)
+        self.assertEqual(simulations_for(24_999, total), high)
 
 
 class ParallelSelfPlayTests(unittest.TestCase):
@@ -917,6 +931,27 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(position.grid[move[0]][move[1]], 0)
         self.assertLess(elapsed, 1.2)
 
+    def test_the_engine_clamps_the_solver_budgets_to_the_move_budget(self) -> None:
+        from unittest import mock
+
+        seen: list[float] = []
+
+        def fake(position, player, budget, solver, depth, nodes):
+            seen.append(budget)
+            return None
+
+        position = Board(
+            board_of([(7, 7, BLACK), (6, 8, WHITE), (5, 5, BLACK), (9, 9, WHITE)])
+        )
+        engine = self.engine(
+            simulations=2, time_budget=0.3, vcf_budget=0.25, vct_budget=0.25
+        )
+        with mock.patch("az_worker.engine.winning_move", fake):
+            engine.choose_move([row[:] for row in position.grid], [], BLACK, None, {})
+        self.assertEqual(len(seen), 2)
+        for budget in seen:
+            self.assertLessEqual(budget, 0.3 * 0.4 + 1e-6)
+
     def test_the_engine_finds_a_forced_win_through_vcf(self) -> None:
         position = Board(
             board_of(
@@ -956,6 +991,15 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.solver_nodes, 500)
         self.assertEqual(settings.simulations, 100000)
         self.assertAlmostEqual(settings.time_budget, 2.0)
+
+    def test_reads_the_candidate_radius(self) -> None:
+        base = {
+            "MYGO_URL": "http://127.0.0.1:8080/api/v1",
+            "MYGO_ENGINE_TOKEN": "token",
+            "MYGO_ENGINE_ID": "az",
+        }
+        self.assertEqual(Settings.from_env(base).candidate_radius, 0)
+        self.assertEqual(Settings.from_env({**base, "AZ_CANDIDATE_RADIUS": "2"}).candidate_radius, 2)
 
     def test_the_defaults_keep_vcf_and_vct_on(self) -> None:
         settings = Settings.from_env(

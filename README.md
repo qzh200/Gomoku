@@ -186,6 +186,7 @@ python -m llm_worker
 | `OPENAI_MODEL` | `gpt-4o-mini` | 模型名称 |
 | `AZ_MODEL_PATH` | `models/az/current.pt` | AlphaZero 权重 |
 | `AZ_DEVICE` | `auto` | `auto` / `cpu` / `cuda` |
+| `AZ_CANDIDATE_RADIUS` | `0` | 搜索打开的候选半径，`0` 为全盘 225 点 |
 | `CLASSICAL_DEPTH` | `8` | 传统引擎最大深度 |
 | `CLASSICAL_TIME_BUDGET` | `2.0` | 传统引擎每手秒数 |
 

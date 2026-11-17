@@ -50,6 +50,7 @@ class SelfPlay:
         seed: int | None = None,
         evaluator=None,
         solver=None,
+        radius: int = 0,
     ) -> None:
         self.simulations = simulations
         self.temperature_moves = temperature_moves
@@ -64,6 +65,7 @@ class SelfPlay:
             time_budget=time_budget,
             seed=seed,
             evaluator=evaluator,
+            radius=radius,
         )
 
     def play_game(self) -> GameResult:
@@ -137,10 +139,12 @@ def worker_init(
     temperature_moves: int = TEMPERATURE_MOVES,
     requests=None,
     solver_args=None,
+    radius: int = 0,
 ) -> None:
     torch.set_num_threads(1)
     _WORKER.clear()
     _WORKER["temperature_moves"] = temperature_moves
+    _WORKER["radius"] = max(0, int(radius))
     _WORKER["models"] = {}
     _WORKER["evaluator"] = None
     _WORKER["solver"] = _make_solver(solver_args)
@@ -189,5 +193,6 @@ def worker_play(task: tuple[str, int, int, int, int]) -> GameResult:
         seed=seed,
         evaluator=evaluator,
         solver=_WORKER.get("solver"),
+        radius=_WORKER.get("radius", 0),
     )
     return player.play_game()

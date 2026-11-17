@@ -49,11 +49,12 @@ flowchart LR
 | 损失 | `(z-v)² - πᵀlog p + c‖θ‖²` | 同左，策略项与价值项都是批内均值 |
 | 批大小 | 4096 | **256** |
 | 残差块 | Conv-BN-ReLU → Conv-BN → Add → ReLU | 同左（post-activation） |
-| 塔 | 20/40 块 × 256 通道 | **6 块 × 64 通道** |
+| 塔 | 20/40 块 × 256 通道 | **10 块 × 128 通道** |
 | 策略头 | 2 通道 1×1 → BN → ReLU → FC(棋盘) | 同左（FC 225） |
 | 价值头 | 1 通道 1×1 → BN → ReLU → FC256 → ReLU → FC1 → tanh | FC64 |
 | 搜索 | PUCT，`c_base=19652`，`c_init=1.25` | 同左 |
-| 模拟数 | 800 | **128 / 256 / 400** 分段 |
+| 模拟数 | 800 | **400 / 800 / 1600** 分段 |
+| 候选动作 | 全盘合法点 | 同左（全盘 225 点；`--candidate-radius` 可裁剪，默认 0 = 不裁剪） |
 | 根噪声 | Dirichlet α=0.03（围棋）/ 0.3（象棋），ε=0.25 | **α=0.05，ε=0.25** |
 | 温度 | 前 30 手 τ=1，之后 τ→0 | **前 12 手 τ=1，之后贪心** |
 | 价值目标 | 终局结果 z ∈ {+1, -1, 0} | 同左 |
@@ -68,18 +69,28 @@ flowchart LR
 训练规模：
 
 - 总步数默认 **25,000**，边界 3,571 / 10,714 / 17,857 步各衰减 10×；
-- 模拟数按步数进度分三段：前 1/3 用 128，中 1/3 用 256，后 1/3 用 400；
+- 模拟数按步数进度分三段：前 1/3 用 400，中 1/3 用 800，后 1/3 用 1600；
 - 每轮 10 局自对弈、250 步梯度；100 轮打完 25,000 步。
+- 动作仍是全盘空点，不做候选裁剪（`--candidate-radius 0`，默认）；
+- 实测 400 模拟分到 225 个点上平均只有 1.8 次访问，同一局面换一颗随机种子得到的两份
+  访问分布互不重叠（交叉熵 8.0 > 均匀的 5.42），直到 1600 模拟才降到 6.6。策略目标
+  的噪声只能靠模拟数压下去，所以模拟数分段比旧版提高了一档：400 / 800 / 1600；
+- 若显存/时间吃紧想用半径裁剪换稳定性，`--candidate-radius 2` 在同样 400 模拟下把
+  交叉熵降到 3.75，但会限制落子范围。
 
 ## 3. 棋盘与动作空间
 
 `Board.grid` 是 15×15 列表，`_stones` 维护 `(row, col, player)`。`play` 返回是否成五。
 
-**MCTS 的动作空间是全盘空点**（`Board.empty_cells()`），没有任何候选裁剪或每节点
-宽度限制：剪枝会改变 PUCT 的访问分布，官方基线里不存在。
+**MCTS 的动作空间是全盘空点**（`Board.empty_cells()`，225 点，不裁剪，随时可下任何
+空点）。`--candidate-radius` / `AZ_CANDIDATE_RADIUS` 只作为实验开关存在（默认 0）。
+全盘 225 点在 400 模拟下平均只有 1.8 次访问，访问分布由单样本价值噪声主导：同一局面
+换种子后两份目标的交叉熵 8.0，比均匀分布的 5.42 还差。限制半径能立刻把目标稳定下来
+（半径 2、400 模拟时 3.75），但会限制落子范围，所以默认不做，改以提高模拟数
+（400/800/1600）来削噪声。
 `features.legal_mask(board)` 把全部空点标为 1，用于在 logits 上屏蔽非法点。
 
-`Board.candidates(radius=2)` 只用于擂台随机开局与 VCF 附近的走法生成，不参与搜索。
+`Board.candidates(radius=2)` 还用于擂台随机开局与 VCF 附近的走法生成。
 
 ## 4. 九平面特征
 
@@ -133,20 +144,22 @@ DIRECTIONS = (1, 20, 21, 19)      # 横、竖、主对角、副对角
 
 ## 5. 网络
 
-`network.GomokuNet(channels=64, blocks=6, value_hidden=64)`，共 565,418 个参数：
+`network.GomokuNet(channels=128, blocks=10, value_hidden=64)`，共 3,081,258 个参数
+（旧预设 64×6 只有 565,418 个，实测在同一缓冲区上留出交叉熵停在 4.57，
+比自身目标熵 2.54 高 2 个 nat，属于容量不足）：
 
 ```text
 输入  (B, 9, 15, 15)
-stem  Conv2d(9→64, 3×3, pad=1, bias=False) + BN + ReLU
-tower 6 × ResidualBlock(64)
+stem  Conv2d(9→128, 3×3, pad=1, bias=False) + BN + ReLU
+tower 10 × ResidualBlock(128)
        └ Conv3×3 + BN + ReLU → Conv3×3 + BN → +x → ReLU
 
 policy head:
-  Conv2d(64→2, 1×1) + BN + ReLU
+  Conv2d(128→2, 1×1) + BN + ReLU
   flatten → Linear(2*225 → 225) → logits
 
 value head:
-  Conv2d(64→1, 1×1) + BN + ReLU
+  Conv2d(128→1, 1×1) + BN + ReLU
   flatten → Linear(225 → 64) + ReLU → Linear(64 → 1) → tanh
 ```
 
@@ -204,7 +217,7 @@ score       = Q + U
 2. 叶是终端（成五、满盘）→ 立即回传；
 3. 否则压入 `pending` 并打 `virtual_loss`；
 4. 攒够 `batch_size`（默认 32）或结束时 `_flush`：一次前向评估所有叶子，逐个展开并回传；
-5. 每 16 次模拟检查一次 `deadline`（`time_budget`）。
+5. 每次模拟前后检查 `deadline`（`time_budget`），超时即停。
 
 虚拟损失是批量推理的代价补偿：多个下降路径在等 GPU 时不会全部压到同一个叶子。
 `_flush` 评估完会递减该叶的 `virtual_loss`，再由 `_backpropagate` 沿路径回传，
@@ -213,7 +226,7 @@ score       = Q + U
 ### 6.4 展开
 
 ```text
-moves  = board.empty_cells()            # 全盘空点，不裁剪
+moves  = board.empty_cells()            # radius>0 时改为棋子周围该半径内的空点
 priors = policy[cell] 归一化（全 0 则均匀）
 每个子节点：
   落子即胜           → terminal_value = -1（对子节点是输）
@@ -333,14 +346,15 @@ P = (1 - 0.25) * P + 0.25 * η
 | `--momentum` | 0.9 | SGD 动量 |
 | `--weight-decay` | 1e-4 | L2 |
 | `--buffer` | 100000 | 回放池容量 |
-| `--simulations` | 无 | 固定模拟数；不给则按进度 128/256/400 |
+| `--simulations` | 无 | 固定模拟数；不给则按进度 400/800/1600 |
 | `--search-batch` | 32 | MCTS 叶批大小 |
+| `--candidate-radius` | 0 | 搜索打开的候选半径，0 = 全盘 225 点（默认不裁剪） |
 | `--workers` | auto | 并行自对弈进程数；auto 按空闲显存与 CPU 核数推导 |
 | `--worker-device` | auto | `auto`/`cuda`/`cpu`/`shared`（`shared` = 所有进程共享一个 GPU 推理服务） |
 | `--temperature-moves` | 12 | 前多少手温度采样 |
 | `--augment` | 关 | 八对称增强 |
 | `--device` / `--model` / `--init` / `--seed` | auto / `models/az/current.pt` / 同 model / 0 | 运行参数 |
-| `--channels` / `--blocks` / `--value-hidden` | 64 / 6 / 64 | 网络规模（从随机网络起步时生效） |
+| `--channels` / `--blocks` / `--value-hidden` | 128 / 10 / 64 | 网络规模（从随机网络起步时生效） |
 | `--buffer-file` / `--resume` | 无 / 关 | 回放池落盘与续训 |
 | `--log-file` | auto | 每轮追加一行 CSV；auto = 权重同目录的 `<model>.log`，`none` 关闭 |
 | `--tensorboard` | auto | 事件目录；auto = 权重同目录的 `tensorboard/`，`none` 关闭 |
@@ -440,6 +454,11 @@ CUDA 上下文，进程数不再受显存限制，请求按批合并后转发到
 | `AZ_VCT_BUDGET` | 0.25 | 每手 VCT 预算，0 关闭 |
 | `AZ_SOLVER_DEPTH` | 10 | 解算器最大攻方手数 |
 | `AZ_SOLVER_NODES` | 4000 | 解算器节点上限 |
+| `AZ_CANDIDATE_RADIUS` | 0 | 搜索打开的候选半径，0 为全盘 225 点 |
+
+每手 `--time-budget` 是**含解算器**的总秒数：VCF、VCT 各自最多吃掉剩余预算的
+40%，搜索至少保留 20%（且不低于 0.05 秒）。`--vcf-budget` / `--vct-budget`
+是上限，不是配额。
 
 每局 `config` 可覆盖 `simulations` / `temperature`。`model_path` 不存在时构造随机
 网络，链路可通、棋力无意义；权重平面数不符时打印 `权重不可用: ...` 并以状态码 2 退出。

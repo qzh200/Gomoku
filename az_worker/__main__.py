@@ -52,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
             vct_budget=settings.vct_budget,
             solver_depth=settings.solver_depth,
             solver_nodes=settings.solver_nodes,
+            radius=settings.candidate_radius,
         )
     except ValueError as error:
         print(f"权重不可用: {error}", file=sys.stderr)

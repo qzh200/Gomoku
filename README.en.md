@@ -66,7 +66,7 @@ MyGo is a **local-first** Gomoku (Five-in-a-Row) desktop application. Go owns th
 | --- | --- | --- | --- | --- |
 | `classical` | Classical search | 6-cell window patterns + PVS + transposition table + VCF | CPU only, no external service | Stable, reproducible tactical play |
 | `llm` | Large language model | Exact threat text + 0-based coordinate prompt, JSON move parsing | OpenAI-compatible API | Explainable natural-language reasoning, prompt research |
-| `az` | AlphaZero | 7-plane residual network + PUCT MCTS, teacher warm start + self-play + self-evolution | Local PyTorch + weights | Learned positional intuition, long-term strategy |
+| `az` | AlphaZero | 9-plane residual network + PUCT MCTS, pure self-play training (official-method baseline) | Local PyTorch + weights | Learned positional intuition, long-term strategy |
 
 There is also `mock_worker/`, used only for contract tests and link diagnostics; it is not meant for real games.
 
@@ -186,6 +186,7 @@ All workers share the connection variables. The full matrix is in [`doc/07-compa
 | `OPENAI_MODEL` | `gpt-4o-mini` | Model name |
 | `AZ_MODEL_PATH` | `models/az/current.pt` | AlphaZero weights |
 | `AZ_DEVICE` | `auto` | `auto` / `cpu` / `cuda` |
+| `AZ_CANDIDATE_RADIUS` | `0` | Candidate radius opened by the search; `0` = all 225 cells |
 | `CLASSICAL_DEPTH` | `8` | Classical search depth limit |
 | `CLASSICAL_TIME_BUDGET` | `2.0` | Seconds per classical move |
 

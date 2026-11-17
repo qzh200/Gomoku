@@ -11,6 +11,7 @@ from classical_worker.search import Searcher
 
 from .board import BLACK, WHITE, Board, other
 from .config import (
+    DEFAULT_CANDIDATE_RADIUS,
     DEFAULT_SOLVER_DEPTH,
     DEFAULT_SOLVER_NODES,
     DEFAULT_VCF_BUDGET,
@@ -88,6 +89,7 @@ def az_side(
     solver_depth: int = DEFAULT_SOLVER_DEPTH,
     solver_nodes: int = DEFAULT_SOLVER_NODES,
     seed: int | None = None,
+    radius: int = DEFAULT_CANDIDATE_RADIUS,
 ) -> AzSide:
     return AzSide(
         AlphaZeroEngine(
@@ -100,6 +102,7 @@ def az_side(
             solver_depth=solver_depth,
             solver_nodes=solver_nodes,
             seed=seed,
+            radius=radius,
         )
     )
 
@@ -152,6 +155,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="每对棋局开头的随机着法数；两个确定性引擎重复同一局会毁掉统计，0 表示关闭",
     )
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
+    parser.add_argument(
+        "--candidate-radius",
+        type=int,
+        default=DEFAULT_CANDIDATE_RADIUS,
+        help="候选搜索只考虑棋子周围该半径内的空点，0 表示全盘 225 点",
+    )
     return parser
 
 
@@ -242,6 +251,7 @@ def main(argv: list[str] | None = None) -> int:
         args.solver_depth,
         args.solver_nodes,
         seed=args.seed,
+        radius=args.candidate_radius,
     )
     if args.opponent == "az":
         opponent_path = Path(args.opponent_model)
@@ -259,6 +269,7 @@ def main(argv: list[str] | None = None) -> int:
             args.solver_depth,
             args.solver_nodes,
             seed=None if args.seed is None else args.seed + 1,
+            radius=args.candidate_radius,
         )
         opponent_name = f"AZ {opponent_path}"
     else:

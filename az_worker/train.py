@@ -41,15 +41,17 @@ WEIGHT_DECAY = 1e-4
 
 BUFFER_CAPACITY = 100_000
 
-CHANNELS = 64
+CHANNELS = 128
 
-BLOCKS = 6
+BLOCKS = 10
 
 VALUE_HIDDEN = 64
 
 SEARCH_BATCH = 32
 
-SIMULATIONS_SCHEDULE = (128, 256, 400)
+CANDIDATE_RADIUS = 0
+
+SIMULATIONS_SCHEDULE = (400, 800, 1600)
 
 SIMULATIONS_FRACTIONS = (1.0 / 3.0, 2.0 / 3.0)
 
@@ -115,6 +117,7 @@ def measure_strength(
     seed: int,
     vcf_budget: float = 0.1,
     vct_budget: float = 0.1,
+    radius: int = CANDIDATE_RADIUS,
 ):
     from .arena import az_side, classical_side, play_series
 
@@ -126,6 +129,7 @@ def measure_strength(
         vcf_budget,
         vct_budget,
         seed=seed,
+        radius=radius,
     )
     opponent = classical_side(classical_depth, 12, classical_time)
     return play_series(candidate, opponent, games, 2, seed)
@@ -176,9 +180,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--simulations",
         type=int,
         default=None,
-        help="固定每手模拟数；默认按步数进度用 128/256/400",
+        help="固定每手模拟数；默认按步数进度用 400/800/1600",
     )
     parser.add_argument("--search-batch", type=int, default=SEARCH_BATCH, help="MCTS 批大小")
+    parser.add_argument(
+        "--candidate-radius",
+        type=int,
+        default=CANDIDATE_RADIUS,
+        help="搜索只考虑棋子周围该半径内的空点，0 表示全盘 225 点（无裁剪）",
+    )
     parser.add_argument(
         "--workers",
         default="auto",
@@ -377,7 +387,13 @@ def main(argv: list[str] | None = None) -> int:
         pool = ProcessPoolExecutor(
             max_workers=workers,
             initializer=worker_init,
-            initargs=(worker_device, args.temperature_moves, requests, solver_args),
+            initargs=(
+                worker_device,
+                args.temperature_moves,
+                requests,
+                solver_args,
+                args.candidate_radius,
+            ),
         )
         extra = "" if free_bytes is None else f"，空闲显存 {free_bytes / 2**20:.0f} MiB"
         print(
@@ -427,6 +443,7 @@ def main(argv: list[str] | None = None) -> int:
                 temperature_moves=args.temperature_moves,
                 seed=rng.randrange(1 << 30),
                 solver=PlaySolver(*solver_args) if solver_args else None,
+                radius=args.candidate_radius,
             )
             games_played = [player.play_game() for _ in range(games)]
         wins = {1: 0, 2: 0, None: 0}
@@ -514,6 +531,7 @@ def main(argv: list[str] | None = None) -> int:
                     iteration,
                     args.eval_vcf,
                     args.eval_vct,
+                    args.candidate_radius,
                 )
                 eval_winrate = f"{probe.winrate:.3f}"
                 print(
