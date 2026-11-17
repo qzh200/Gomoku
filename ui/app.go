@@ -226,6 +226,37 @@ func (a *App) pick(row, col int) {
 	a.refresh()
 }
 
+func (a *App) undo() {
+	a.mu.Lock()
+	game := a.st.game
+	owner := a.st.ownerToken
+	a.mu.Unlock()
+	if game == nil || owner == "" || game.Mode == gomoku.ModeAIVsAI {
+		return
+	}
+	caller := application.Caller{Kind: application.CallerOwner, OwnerTokenHash: auth.HashToken(owner)}
+	updated, err := a.moves.Undo(game.ID, caller, application.UndoRequest{ExpectedVersion: game.Version})
+	if err != nil {
+		if appErr, ok := err.(*application.Error); ok && appErr.Code == application.CodeVersionConflict {
+			a.refresh()
+			if fresh := a.snapshot(); fresh != nil && fresh.Version != game.Version {
+				updated, err = a.moves.Undo(game.ID, caller, application.UndoRequest{ExpectedVersion: fresh.Version})
+			}
+		}
+		if err != nil {
+			a.setError(err)
+			return
+		}
+	}
+	a.mu.Lock()
+	a.st.game = updated
+	a.st.status = describeGame(updated)
+	a.st.notice = ""
+	a.st.noticeKind = noticeNone
+	a.mu.Unlock()
+	a.refresh()
+}
+
 func (a *App) togglePause() {
 	a.mu.Lock()
 	game := a.st.game
@@ -275,15 +306,19 @@ const replayLimit = 12
 
 func (a *App) refreshReplay() {
 	games := a.games.List()
-	finished := make([]*gomoku.Game, 0, len(games))
-	for i := len(games) - 1; i >= 0 && len(finished) < replayLimit; i-- {
-		if games[i].Status != gomoku.StatusFinished {
+	a.mu.Lock()
+	currentID := a.st.gameID
+	a.mu.Unlock()
+	recent := make([]*gomoku.Game, 0, len(games))
+	for i := len(games) - 1; i >= 0 && len(recent) < replayLimit; i-- {
+		game := games[i]
+		if game.Status != gomoku.StatusFinished && game.ID == currentID {
 			continue
 		}
-		finished = append(finished, games[i])
+		recent = append(recent, game)
 	}
 	a.mu.Lock()
-	a.st.replayGames = finished
+	a.st.replayGames = recent
 	a.mu.Unlock()
 }
 
@@ -401,6 +436,8 @@ func errorMessage(code string) string {
 		return "本局已经结束，请开始新棋局"
 	case application.CodeGamePaused:
 		return "棋局已暂停"
+	case application.CodeInvalidRequest:
+		return "无法悔棋"
 	case application.CodeForbidden:
 		return "无权操作该棋局"
 	case application.CodeClaimInvalid, application.CodeClaimExpired:

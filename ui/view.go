@@ -113,6 +113,7 @@ func (a *App) buildSidebar(c *mygo.Context, tk *theme.Tokens) {
 						a.buildModePicker(c)
 						a.buildEnginePicker(c)
 						a.buildNewGameButton(c)
+						a.buildUndoButton(c)
 						a.buildPauseButton(c)
 						a.buildResult(c)
 						a.buildNotice(c)
@@ -182,6 +183,9 @@ func replaySummary(game *gomoku.Game) string {
 }
 
 func replayResult(game *gomoku.Game) (string, display.TagColor) {
+	if game.Status != gomoku.StatusFinished {
+		return "未完成", display.TagGray
+	}
 	switch game.Result {
 	case gomoku.ResultBlackWin:
 		return "黑胜", display.TagGray
@@ -295,6 +299,20 @@ func (a *App) buildNewGameButton(c *mygo.Context) {
 	button := iconButton(c, lucide.Plus(), "开始新棋局", action.ButtonProps{Variant: action.Primary})
 	if button.Clicked() {
 		a.newGame()
+	}
+}
+
+func (a *App) buildUndoButton(c *mygo.Context) {
+	a.mu.Lock()
+	game := a.st.game
+	reviewing := a.st.reviewing
+	a.mu.Unlock()
+	if reviewing || game == nil || game.Mode == gomoku.ModeAIVsAI || game.MoveCount == 0 {
+		return
+	}
+	button := iconButton(c, lucide.Undo2(), "悔棋", action.ButtonProps{Variant: action.Default})
+	if button.Clicked() {
+		a.undo()
 	}
 }
 

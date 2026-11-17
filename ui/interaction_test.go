@@ -197,11 +197,9 @@ func TestReplayRewindsAPastGame(t *testing.T) {
 	app.newGame()
 
 	app.mu.Lock()
-	for _, game := range app.st.replayGames {
-		if game.Status != gomoku.StatusFinished {
-			app.mu.Unlock()
-			t.Fatalf("回溯列表只能列出已结束的棋局, 实际 %s 仍在进行", game.ID)
-		}
+	if len(app.st.replayGames) != 1 || app.st.replayGames[0].ID != past.ID {
+		app.mu.Unlock()
+		t.Fatalf("回溯列表必须记录已结束的旧棋局, 实际 %d 局", len(app.st.replayGames))
 	}
 	app.mu.Unlock()
 

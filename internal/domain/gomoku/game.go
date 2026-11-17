@@ -136,6 +136,24 @@ func (g *Game) History() []Move {
 	return out
 }
 
+// Undo removes the last move and rebuilds the position before it. The
+// version keeps moving forward so stale claims and clients stay stale.
+func (g *Game) Undo() bool {
+	if len(g.moves) == 0 {
+		return false
+	}
+	version := g.Version + 1
+	execution := g.Execution
+	moves := g.moves[:len(g.moves)-1]
+	*g = *NewGame(g.ID, g.Mode, g.Black(), g.White())
+	for _, move := range moves {
+		g.Place(move.Row, move.Col, move.Player)
+	}
+	g.Version = version
+	g.Execution = execution
+	return true
+}
+
 func (g *Game) Place(row, col int, player Player) bool {
 	if !g.Board.Place(row, col, player) {
 		return false

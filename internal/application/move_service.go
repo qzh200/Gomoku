@@ -133,6 +133,82 @@ func (s *MoveService) Submit(gameID string, caller Caller, req SubmitMoveRequest
 	return result, nil
 }
 
+type UndoRequest struct {
+	ExpectedVersion int
+}
+
+// Undo takes back the caller's last exchange. In human-vs-AI a single
+// stone and the AI reply above it go back together, so the human moves
+// again instead of the AI replaying its move.
+func (s *MoveService) Undo(gameID string, caller Caller, req UndoRequest) (*gomoku.Game, error) {
+	s.coord.Lock()
+	defer s.coord.Unlock()
+
+	game, ok := s.coord.Games().Get(gameID)
+	if !ok {
+		return nil, newError(CodeGameNotFound, "棋局不存在")
+	}
+	if err := s.checkCaller(game, caller); err != nil {
+		return nil, err
+	}
+	if caller.Kind == CallerEngine {
+		return nil, newError(CodeForbidden, "引擎不能悔棋")
+	}
+	if game.MoveCount == 0 {
+		return nil, newError(CodeInvalidRequest, "还没有落子")
+	}
+	if req.ExpectedVersion != 0 && req.ExpectedVersion != game.Version {
+		return nil, newError(CodeVersionConflict, "棋局版本已经变化")
+	}
+	if game.Execution == gomoku.ExecutionPaused {
+		return nil, newError(CodeGamePaused, "棋局已经暂停")
+	}
+
+	count := undoCount(game)
+	var updated *gomoku.Game
+	err := s.coord.Games().Update(gameID, func(stored *gomoku.Game) error {
+		if stored.Version != game.Version {
+			return newError(CodeVersionConflict, "棋局版本已经变化")
+		}
+		for range count {
+			if !stored.Undo() {
+				return newError(CodeInvalidRequest, "还没有落子")
+			}
+		}
+		updated = stored.Clone()
+		return nil
+	})
+	if err != nil {
+		if appErr, ok := err.(*Error); ok {
+			return nil, appErr
+		}
+		if err == repository.ErrNotFound {
+			return nil, newError(CodeGameNotFound, "棋局不存在")
+		}
+		return nil, newErrorf(CodeInternalError, "悔棋失败: %v", err)
+	}
+
+	s.coord.Leases().InvalidateGame(gameID)
+	s.coord.Signal()
+	updated.AIThinking = s.coord.Leases().ActiveFor(gameID, updated.Version)
+	return updated, nil
+}
+
+func undoCount(game *gomoku.Game) int {
+	if game.Mode != gomoku.ModeHumanVsAI {
+		return 1
+	}
+	human := gomoku.PlayerBlack
+	if game.Black().IsAI() {
+		human = gomoku.PlayerWhite
+	}
+	moves := game.History()
+	if moves[len(moves)-1].Player == human || len(moves) < 2 {
+		return 1
+	}
+	return 2
+}
+
 func (s *MoveService) checkCaller(game *gomoku.Game, caller Caller) error {
 	switch caller.Kind {
 	case CallerOwner:
