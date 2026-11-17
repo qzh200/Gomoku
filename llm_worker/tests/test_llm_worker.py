@@ -110,62 +110,70 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(board.stone_list(state, board.BLACK), "(0, 0)")
         self.assertEqual(board.stone_list(state, board.WHITE), "(1, 2)")
 
-    def test_describes_a_diagonal_three_and_its_ends(self) -> None:
+    def test_reports_the_two_five_points_of_an_open_four(self) -> None:
+        state = empty_board()
+        for col in range(7, 11):
+            state[7][col] = board.BLACK
+        self.assertEqual(board.five_points(state, board.BLACK), [(7, 6), (7, 11)])
+        line = board.describe_threats(state, board.BLACK)[0]
+        self.assertIn("2 个成五点", line)
+        self.assertIn("堵一个也挡不住", line)
+
+    def test_reports_the_single_five_point_of_a_blocked_four(self) -> None:
+        state = empty_board()
+        for col in range(7, 11):
+            state[7][col] = board.BLACK
+        state[7][6] = board.WHITE
+        self.assertEqual(board.five_points(state, board.BLACK), [(7, 11)])
+        self.assertEqual(
+            board.describe_threats(state, board.BLACK),
+            ["黑棋下在 (7, 11) 就成五。"],
+        )
+
+    def test_calls_an_open_three_an_open_four_maker(self) -> None:
         state = empty_board()
         for row, col in ((7, 7), (6, 8), (5, 9)):
             state[row][col] = board.BLACK
-        text = board.describe_lines(state, board.BLACK)
-        self.assertIn("黑棋连成一线的地方：", text)
-        self.assertIn("(5, 9)-(6, 8)-(7, 7)", text)
-        self.assertIn("3 连", text)
-        self.assertIn("(4, 10)、(8, 6)", text)
+        open_fours, fours = board.four_makers(state, board.BLACK)
+        self.assertEqual(open_fours, [(4, 10), (8, 6)])
+        line = board.describe_threats(state, board.BLACK)[0]
+        self.assertIn("(4, 10)、(8, 6) 就成活四", line)
+        self.assertIn("挡不住", line)
 
-    def test_reports_a_line_whose_ends_are_both_blocked(self) -> None:
+    def test_calls_a_blocked_three_only_a_four_maker(self) -> None:
         state = empty_board()
-        for col in range(7, 11):
-            state[7][col] = board.WHITE
-        state[7][6] = board.BLACK
-        state[7][11] = board.BLACK
-        self.assertIn("两端都被堵住", board.describe_lines(state, board.WHITE))
+        for col in range(8, 11):
+            state[7][col] = board.BLACK
+        state[7][7] = board.WHITE
+        open_fours, fours = board.four_makers(state, board.BLACK)
+        self.assertEqual(open_fours, [])
+        self.assertEqual(fours, [(7, 11), (7, 12)])
 
-    def test_reports_no_line_for_a_loose_position(self) -> None:
+    def test_finds_the_gap_of_a_broken_three(self) -> None:
+        state = empty_board()
+        for col in (8, 9, 11):
+            state[7][col] = board.BLACK
+        open_fours, _ = board.four_makers(state, board.BLACK)
+        self.assertEqual(open_fours, [(7, 10)])
+
+    def test_reports_nothing_for_a_loose_position(self) -> None:
         state = empty_board()
         state[5][5] = board.BLACK
-        self.assertEqual(
-            board.describe_lines(state, board.BLACK),
-            "黑棋没有连成三子以上的棋子。",
-        )
-
-    def test_parses_a_coordinate_of_the_labels(self) -> None:
-        self.assertEqual(board.parse_coordinate("H8"), (7, 7))
-        self.assertEqual(board.parse_coordinate("h8"), (7, 7))
-        self.assertEqual(board.parse_coordinate("落点 A1"), (0, 0))
-        self.assertIsNone(board.parse_coordinate("P9"))
-        self.assertIsNone(board.parse_coordinate("没有坐标"))
+        self.assertEqual(board.describe_threats(state, board.BLACK), [])
 
     def test_parses_a_json_move(self) -> None:
-        self.assertEqual(board.parse_move('好的：{"move": "H8"}'), (7, 7))
-        self.assertEqual(board.parse_move('{"move": "M5"}'), (4, 12))
-        self.assertEqual(board.parse_move("H8"), (7, 7))
-        self.assertIsNone(board.parse_move("我不知道"))
-
-    def test_parses_a_move_with_row_and_col(self) -> None:
-        self.assertEqual(board.parse_move('{"move": {"row": 7, "col": 7}}'), (7, 7))
+        self.assertEqual(board.parse_move('好的：{"move": {"row": 7, "col": 7}}'), (7, 7))
         self.assertEqual(board.parse_move('{"move": {"row": 0, "col": 14}}'), (0, 14))
         self.assertIsNone(board.parse_move('{"move": {"row": 15, "col": 0}}'))
+        self.assertIsNone(board.parse_move("我不知道"))
 
     def test_reads_row_and_col_as_zero_based_numbers(self) -> None:
         self.assertEqual(board.parse_move('{"row": 5, "col": 13}'), (5, 13))
         self.assertEqual(board.parse_move('{"row": 0, "col": 0}'), (0, 0))
-        self.assertIsNone(board.parse_move('{"row": 15, "col": 0}'))
         self.assertIsNone(board.parse_move('{"row": 16, "col": 16}'))
 
-    def test_ignores_the_reasoning_prose(self) -> None:
-        self.assertIsNone(board.parse_move_strict("对手在 M8 有子，我下 I9"))
-        self.assertEqual(board.parse_move_strict('{"move": "I9"}'), (8, 8))
-        self.assertEqual(
-            board.parse_move_strict('{"move": {"row": 8, "col": 8}}'), (8, 8)
-        )
+    def test_does_not_read_a_coordinate_out_of_prose(self) -> None:
+        self.assertIsNone(board.parse_move("对手在 H8 有子，我下 I9"))
 
     def test_finds_an_empty_cell(self) -> None:
         state = empty_board()
@@ -212,25 +220,29 @@ class EngineTests(unittest.TestCase):
         self.assertNotIn("行\\列", prompt)
         self.assertNotIn("必须挡", prompt)
 
-    def test_the_prompt_spells_out_the_connected_lines(self) -> None:
+    def test_the_prompt_lists_the_threats_of_both_sides(self) -> None:
         state = empty_board()
-        for row, col in ((7, 7), (6, 8), (5, 9)):
+        for row, col in ((7, 7), (6, 8), (5, 9), (4, 10)):
             state[row][col] = board.BLACK
         state[7][8] = board.WHITE
         state[7][9] = board.WHITE
         state[7][10] = board.WHITE
         client = FakeClient(['{"move": {"row": 8, "col": 6}}'])
         engine = LLMEngine(client)
-        engine.choose_move(state, [], board.WHITE, {"row": 5, "col": 9, "player": board.BLACK})
+        engine.choose_move(state, [], board.WHITE, {"row": 4, "col": 10, "player": board.BLACK})
         prompt = client.calls[0][1].content
         self.assertIn(
-            "黑棋连成一线的地方：(5, 9)-(6, 8)-(7, 7)（3 连，延伸端：(4, 10)、(8, 6)）。",
+            "- 黑棋有 2 个成五点 (3, 11)、(8, 6)，落一子就成五，堵一个也挡不住。",
             prompt,
         )
-        self.assertIn(
-            "白棋连成一线的地方：(7, 8)-(7, 9)-(7, 10)（3 连，延伸端：(7, 11)）。",
-            prompt,
-        )
+        self.assertIn("白棋下在 (7, 11)、(7, 12) 就成冲四", prompt)
+
+    def test_the_prompt_says_so_when_a_side_has_no_threat(self) -> None:
+        client = FakeClient(['{"move": {"row": 7, "col": 7}}'])
+        engine = LLMEngine(client)
+        engine.choose_move(empty_board(), [], board.BLACK)
+        prompt = client.calls[0][1].content
+        self.assertIn("- 没有成五、活四或冲四的落点。", prompt)
 
     def test_asks_again_when_the_cell_is_taken(self) -> None:
         state = empty_board()
@@ -381,7 +393,7 @@ class SettingsTokenTests(unittest.TestCase):
 
 class EngineReasoningTests(unittest.TestCase):
     def test_takes_the_json_out_of_the_reasoning(self) -> None:
-        client = FakeClient([('先看看棋盘 {"move": "H8"}', True)])
+        client = FakeClient([('先看看棋盘 {"move": {"row": 7, "col": 7}}', True)])
         engine = LLMEngine(client)
         self.assertEqual(engine.choose_move(empty_board(), [], board.BLACK), (7, 7))
 
