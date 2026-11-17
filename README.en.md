@@ -14,6 +14,7 @@
 [![Engines](https://img.shields.io/badge/Engines-3-8957E5?style=flat-square)](#engines)
 [![Status](https://img.shields.io/badge/status-active-2EA043?style=flat-square)](https://github.com/qzh200/Gomoku)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](#contributing)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
 Gomoku · AlphaZero · MCTS · PVS · VCF · LLM · Go · Python · Desktop
 
@@ -298,7 +299,7 @@ Issues and pull requests are welcome.
 
 ## License
 
-This repository does not include a `LICENSE` file yet. Until a license is added, all rights are reserved by default. If you intend to release it under MIT, Apache-2.0 or another license, add the license file first.
+This project is licensed under the [MIT License](LICENSE). Copyright © 2026 qzh200.
 
 ---
 

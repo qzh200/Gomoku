@@ -6,13 +6,13 @@
 
 ```mermaid
 flowchart LR
-  P["patterns.py\n6 格窗口 → 棋型分"] --> POS["position.py\n棋盘 + 增量总分 + Zobrist"]
-  POS --> SH["shapes.py\n整线棋型 → Threat"]
-  POS --> TH["threats.py\n9 格威胁表 / 排序 / VCF / VCT"]
-  TH --> S["search.py\n迭代加深 + PVS + killers"]
-  TT["tt.py\n置换表"] --> S
+  P["patterns.py<br/>6 格窗口 → 棋型分"] --> POS["position.py<br/>棋盘 + 增量总分 + Zobrist"]
+  POS --> SH["shapes.py<br/>整线棋型 → Threat"]
+  POS --> TH["threats.py<br/>9 格威胁表 / 排序 / VCF / VCT"]
+  TH --> S["search.py<br/>迭代加深 + PVS + killers"]
+  TT["tt.py<br/>置换表"] --> S
   SH --> TH
-  S --> E["engine.py\nchoose_move"]
+  S --> E["engine.py<br/>choose_move"]
   E --> W["aiworker.Worker"]
 ```
 

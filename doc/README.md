@@ -9,21 +9,21 @@ MyGo 是一个单进程桌面应用：Go 负责棋局权威状态、HTTP API、�
 ```mermaid
 flowchart LR
   subgraph MyGo["MyGo 进程（Go）"]
-    UI["桌面 UI\nui/"]
-    API["HTTP API\ninternal/transport/http"]
-    APP["应用服务\nGame/Move/Claim"]
-    DOM["领域模型\ninternal/domain/gomoku"]
-    REPO["内存仓储\nrepository"]
-    SCH["租约与队列\nscheduler"]
+    UI["桌面 UI<br/>ui/"]
+    API["HTTP API<br/>internal/transport/http"]
+    APP["应用服务<br/>Game/Move/Claim"]
+    DOM["领域模型<br/>internal/domain/gomoku"]
+    REPO["内存仓储<br/>repository"]
+    SCH["租约与队列<br/>scheduler"]
     UI --> APP
     API --> APP
     APP --> DOM
     APP --> REPO
     APP --> SCH
   end
-  C["classical_worker\n窗口棋型 + PVS + VCF"] <-->|"HTTP 长轮询 / 落子"| API
-  L["llm_worker\nPrompt + 精确棋形"] <-->|"HTTP 长轮询 / 落子"| API
-  A["az_worker\n特征平面 + MCTS"] <-->|"HTTP 长轮询 / 落子"| API
+  C["classical_worker<br/>窗口棋型 + PVS + VCF"] <-->|"HTTP 长轮询 / 落子"| API
+  L["llm_worker<br/>Prompt + 精确棋形"] <-->|"HTTP 长轮询 / 落子"| API
+  A["az_worker<br/>特征平面 + MCTS"] <-->|"HTTP 长轮询 / 落子"| API
   O["OpenAI 兼容模型服务"] <--> L
 ```
 

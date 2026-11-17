@@ -19,21 +19,21 @@ MyGo 是权威棋局状态管理者。桌面 UI 和所有 AI Worker 都通过同
 ```mermaid
 flowchart TB
   subgraph Transport
-    H["http.Server\nrouter.go"]
+    H["http.Server<br/>router.go"]
   end
   subgraph Application
     GS["GameService"]
     MS["MoveService"]
     CS["ClaimService"]
-    CO["Coordinator\n单一互斥锁 + 唤醒通道"]
+    CO["Coordinator<br/>单一互斥锁 + 唤醒通道"]
   end
   subgraph Domain
     G["Game"]
     B["Board [15][15]int"]
-    R["rules.go\nWinsAt / WinningLine"]
+    R["rules.go<br/>WinsAt / WinningLine"]
   end
   subgraph Infra
-    REPO["memoryGames\nmemoryIdempotency"]
+    REPO["memoryGames<br/>memoryIdempotency"]
     LM["LeaseManager"]
     Q["Queue"]
     AUTH["auth.Registry"]
@@ -133,7 +133,7 @@ type PlayerConfig struct {
 stateDiagram-v2
   [*] --> Playing: NewGame
   Playing --> Playing: Place / Undo
-  Playing --> Paused: PATCH execution_state=paused\n仅 ai_vs_ai
+  Playing --> Paused: PATCH execution_state=paused（仅 ai_vs_ai）
   Paused --> Playing: PATCH execution_state=running
   Playing --> Finished: 五连或棋盘填满
   Paused --> Finished: 恢复后落子结束

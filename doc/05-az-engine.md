@@ -6,13 +6,13 @@
 
 ```mermaid
 flowchart LR
-  B["board.py\n15×15 棋盘"] --> F["features.py\n7 平面编码"]
-  T["threats.py\nbitboard 威胁"] --> F
-  F --> N["network.py\n残差网络"]
-  N --> M["mcts.py\nPUCT + 虚拟损失"]
-  M --> E["engine.py\nchoose_move"]
+  B["board.py<br/>15×15 棋盘"] --> F["features.py<br/>7 平面编码"]
+  T["threats.py<br/>bitboard 威胁"] --> F
+  F --> N["network.py<br/>残差网络"]
+  N --> M["mcts.py<br/>PUCT + 虚拟损失"]
+  M --> E["engine.py<br/>choose_move"]
   E --> W["aiworker.Worker"]
-  C["classical_worker\n教师"] --> WS["warmstart.py"]
+  C["classical_worker<br/>教师"] --> WS["warmstart.py"]
   WS --> N
   SP["selfplay.py"] --> TR["train.py"]
   N --> SP

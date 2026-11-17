@@ -14,6 +14,7 @@
 [![Engines](https://img.shields.io/badge/Engines-3-8957E5?style=flat-square)](#三个引擎)
 [![Status](https://img.shields.io/badge/status-active-2EA043?style=flat-square)](https://github.com/qzh200/Gomoku)
 [![PRs](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](#贡献)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
 五子棋 · Gomoku · AlphaZero · MCTS · PVS · VCF · LLM · Go · Python · Desktop
 
@@ -298,7 +299,7 @@ python -m unittest discover -s llm_worker/tests -t .
 
 ## 许可证
 
-本仓库目前尚未添加 `LICENSE` 文件。在明确许可证之前，代码默认保留所有权利；如果你希望以 MIT / Apache-2.0 等方式开源，请先补充许可证文件。
+本项目采用 [MIT 许可证](LICENSE)。Copyright © 2026 qzh200。
 
 ---
 
