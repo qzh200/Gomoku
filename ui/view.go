@@ -85,12 +85,13 @@ func (a *App) buildStatus(c *mygo.Context, tk *theme.Tokens) {
 	reviewTotal := len(a.st.reviewMoves)
 	a.mu.Unlock()
 	if reviewing {
-		display.Tag(c, fmt.Sprintf("回溯 · 第 %d / %d 手", reviewStep, reviewTotal),
-			display.TagProps{Color: display.TagOrange, Round: true})
+		tag := display.Tag(c, fmt.Sprintf("回溯 · 第 %d / %d 手", reviewStep, reviewTotal),
+			display.TagProps{Color: display.TagOrange, Round: true, Size: theme.Large})
+		tag.FontSize(15)
 		return
 	}
 	if game == nil {
-		display.Text(c, "选择模式并开始一局新棋", display.TextProps{Type: display.TextSecondary, FontSize: 13})
+		display.Text(c, "选择模式并开始一局新棋", display.TextProps{Type: display.TextSecondary, FontSize: 15})
 		return
 	}
 	color := display.TagBlue
@@ -98,14 +99,17 @@ func (a *App) buildStatus(c *mygo.Context, tk *theme.Tokens) {
 	case gomoku.StatusFinished:
 		color = display.TagGreen
 	}
-	display.Tag(c, status, display.TagProps{Color: color, Round: true})
+	tag := display.Tag(c, status, display.TagProps{Color: color, Round: true, Size: theme.Large})
+	tag.FontSize(15)
 }
 
 func (a *App) buildSidebar(c *mygo.Context, tk *theme.Tokens) {
+	_, height := c.Size()
+	available := height - toolbarHeight - pagePadding
 	column := mygo.Column(c).Width(sidebarWidth).MinHeight(0)
 	column.Children(func() {
 		scroll := layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Vertical}, func() {
-			mygo.Column(c).Gap(columnGap).Width(sidebarWidth - 8).Children(func() {
+			mygo.Column(c).Gap(columnGap).Width(sidebarWidth - 8).MinHeight(available).Children(func() {
 				panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(16).Radius(tk.BorderRadiusLG)
 				panel.Children(func() {
 					mygo.Column(c).Gap(14).Children(func() {
@@ -133,11 +137,12 @@ func (a *App) buildReplayPanel(c *mygo.Context, tk *theme.Tokens) {
 	reviewing := a.st.reviewing
 	a.mu.Unlock()
 
-	panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(16).Radius(tk.BorderRadiusLG)
+	panel := layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).Padding(16).Radius(tk.BorderRadiusLG).
+		Grow(1).Basis(0).MinHeight(160)
 	panel.Children(func() {
-		mygo.Column(c).Gap(8).Children(func() {
+		mygo.Column(c).Gap(8).Grow(1).Basis(0).MinHeight(0).Children(func() {
 			mygo.Row(c).AlignItems(mygo.Center).Children(func() {
-				display.Text(c, "棋局回溯", display.TextProps{Strong: true})
+				display.Text(c, "棋局记录", display.TextProps{Strong: true})
 				mygo.Spacer(c).Grow(1).Basis(0)
 				if reviewing {
 					exit := action.Button(c, "退出回溯", action.ButtonProps{Variant: action.Text, Size: theme.Small})
@@ -147,12 +152,12 @@ func (a *App) buildReplayPanel(c *mygo.Context, tk *theme.Tokens) {
 				}
 			})
 			if len(games) == 0 {
-				display.Text(c, "暂无可回溯的棋局", display.TextProps{Type: display.TextSecondary, FontSize: 13})
+				display.Text(c, "暂无棋局记录", display.TextProps{Type: display.TextSecondary, FontSize: 13})
 				return
 			}
 			mygo.List(c, &a.replayList, len(games), func(i int) {
 				a.buildReplayRow(c, games[i], tk)
-			}).Height(150)
+			}).Grow(1).Basis(0)
 		})
 	})
 }
