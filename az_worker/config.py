@@ -9,23 +9,25 @@ from aiworker.settings import ConfigError, Connection
 DEFAULT_MODEL_PATH = "models/az/current.pt"
 DEFAULT_DEVICE = "auto"
 DEFAULT_SIMULATIONS = 100_000
-DEFAULT_C_PUCT = 1.5
 DEFAULT_BATCH_SIZE = 32
-DEFAULT_CANDIDATE_RADIUS = 1
-DEFAULT_CANDIDATE_WIDTH = 16
 DEFAULT_TIME_BUDGET = 2.0
 DEFAULT_TEMPERATURE = 0.0
+DEFAULT_VCF_BUDGET = 0.25
+DEFAULT_VCT_BUDGET = 0.25
+DEFAULT_SOLVER_DEPTH = 10
+DEFAULT_SOLVER_NODES = 4_000
 
 
 ENV_MODEL_PATH = "AZ_MODEL_PATH"
 ENV_DEVICE = "AZ_DEVICE"
 ENV_SIMULATIONS = "AZ_SIMULATIONS"
-ENV_C_PUCT = "AZ_C_PUCT"
 ENV_BATCH_SIZE = "AZ_BATCH_SIZE"
-ENV_CANDIDATE_RADIUS = "AZ_CANDIDATE_RADIUS"
-ENV_CANDIDATE_WIDTH = "AZ_CANDIDATE_WIDTH"
 ENV_TIME_BUDGET = "AZ_TIME_BUDGET"
 ENV_TEMPERATURE = "AZ_TEMPERATURE"
+ENV_VCF_BUDGET = "AZ_VCF_BUDGET"
+ENV_VCT_BUDGET = "AZ_VCT_BUDGET"
+ENV_SOLVER_DEPTH = "AZ_SOLVER_DEPTH"
+ENV_SOLVER_NODES = "AZ_SOLVER_NODES"
 
 
 DEFAULT_ENGINE_ID = "az"
@@ -37,12 +39,13 @@ class Settings:
     model_path: str
     device: str
     simulations: int
-    c_puct: float
     batch_size: int
-    candidate_radius: int
-    candidate_width: int
     time_budget: float
     temperature: float
+    vcf_budget: float
+    vct_budget: float
+    solver_depth: int
+    solver_nodes: int
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -75,10 +78,11 @@ class Settings:
             model_path=text(ENV_MODEL_PATH, DEFAULT_MODEL_PATH),
             device=text(ENV_DEVICE, DEFAULT_DEVICE),
             simulations=integer(ENV_SIMULATIONS, DEFAULT_SIMULATIONS),
-            c_puct=number(ENV_C_PUCT, DEFAULT_C_PUCT),
             batch_size=integer(ENV_BATCH_SIZE, DEFAULT_BATCH_SIZE),
-            candidate_radius=integer(ENV_CANDIDATE_RADIUS, DEFAULT_CANDIDATE_RADIUS),
-            candidate_width=integer(ENV_CANDIDATE_WIDTH, DEFAULT_CANDIDATE_WIDTH),
             time_budget=number(ENV_TIME_BUDGET, DEFAULT_TIME_BUDGET),
             temperature=number(ENV_TEMPERATURE, DEFAULT_TEMPERATURE),
+            vcf_budget=number(ENV_VCF_BUDGET, DEFAULT_VCF_BUDGET),
+            vct_budget=number(ENV_VCT_BUDGET, DEFAULT_VCT_BUDGET),
+            solver_depth=integer(ENV_SOLVER_DEPTH, DEFAULT_SOLVER_DEPTH),
+            solver_nodes=integer(ENV_SOLVER_NODES, DEFAULT_SOLVER_NODES),
         )

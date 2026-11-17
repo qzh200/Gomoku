@@ -34,26 +34,24 @@ python -m classical_worker.benchmark --games 20 --budget 0.2
 ### 3.2 AlphaZero：arena
 
 ```sh
-.venv/Scripts/python.exe -m az_worker.arena --model models/az/current_v3.pt \
-  --games 40 --device cuda --candidate-width 16 --time-budget 2.0 \
+.venv/Scripts/python.exe -m az_worker.arena --model models/az/current.pt \
+  --games 40 --device cuda --time-budget 2.0 \
   --classical-depth 4 --classical-time 0.5 --opening-moves 2 --seed 42
 ```
 
-对旧权重也走同一个入口：
+对另一个权重也走同一个入口：
 
 ```sh
-.venv/Scripts/python.exe -m az_worker.arena --model models/az/evolution/gen_002_candidate.pt \
-  --opponent az --opponent-model models/az/current_v3.pt \
-  --games 40 --device cuda --candidate-width 16 --time-budget 2.0 \
-  --opponent-simulations 100000 --opponent-width 16 --opening-moves 2 --seed 42
+.venv/Scripts/python.exe -m az_worker.arena --model models/az/gen2.pt \
+  --opponent az --opponent-model models/az/current.pt \
+  --games 40 --device cuda --time-budget 2.0 \
+  --opponent-simulations 100000 --opening-moves 2 --seed 42
 ```
 
-局数不能太少，也不能关掉随机开局：温度 0 时同一对权重的对局完全确定，`--opening-moves 0` 会把 N 局压缩成 2 个棋局（实测同一对权重在无开局时 40:0，成对开局后 22:18）。8 局只能发现大缺陷（例如价值头方向错误导致 0:8）。小差异看：
-
-- 预热阶段的“验证首选一致率”；
-- 对手已有冲四时的“正确堵点比例”；
-- 固定局面的价值头符号；
-- 自进化时每代的 `baseline_winrate`（见 `doc/05-az-engine.md` §9）。
+局数不能太少，也不能关掉随机开局：温度 0 时同一对权重的对局完全确定，`--opening-moves 0`
+会把 N 局压缩成 2 个棋局（实测同一对权重在无开局时 40:0，成对开局后 22:18）。8 局只能
+发现大缺陷（例如价值头方向错误导致 0:8）。小差异看固定局面的价值头符号，或威胁平面上的
+堵点正确率（见 `doc/05-az-engine.md` §4）。
 
 ### 3.3 LLM：固定局面探针
 
@@ -133,12 +131,13 @@ Prompt 改动必须重跑这组探针；只看一局完整对局会被随机性�
 | `AZ_MODEL_PATH` | `models/az/current.pt` |
 | `AZ_DEVICE` | auto |
 | `AZ_SIMULATIONS` | 100000 |
-| `AZ_C_PUCT` | 1.5 |
 | `AZ_BATCH_SIZE` | 32 |
-| `AZ_CANDIDATE_RADIUS` | 1 |
-| `AZ_CANDIDATE_WIDTH` | 16 |
 | `AZ_TIME_BUDGET` | 2.0 |
 | `AZ_TEMPERATURE` | 0 |
+| `AZ_VCF_BUDGET` | 0.25 |
+| `AZ_VCT_BUDGET` | 0.25 |
+| `AZ_SOLVER_DEPTH` | 10 |
+| `AZ_SOLVER_NODES` | 4000 |
 
 每局 `config` 可以覆盖的键：
 
@@ -208,18 +207,26 @@ python -m unittest discover -s llm_worker/tests -t .
 .venv/Scripts/python.exe -m unittest discover -s az_worker/tests -t .
 ```
 
-### 5.5 AlphaZero 训练与自进化
+### 5.5 AlphaZero 训练
 
-三阶段手动流程（传统教师 → 自对弈 → 擂台）见 `doc/05-az-engine.md` §11.2；持续变强用自进化：
+纯自对弈，无教师、无晋级门槛，方法见 `doc/05-az-engine.md` §2 与 §8：
 
 ```sh
-.venv/Scripts/python.exe -m az_worker.evolve \
-  --champion models/az/current_v3.pt --out-dir models/az/evolution \
-  --generations 10 --device cuda --seed 1
-# 续跑：--resume
+# 从随机网络起训（默认 25,000 步 / 100 轮 / 每轮 10 局）
+.venv/Scripts/python.exe -m az_worker.train \
+  --total-steps 25000 --iterations 100 --games 10 --device cuda \
+  --model models/az/current.pt --buffer-file models/az/replay.pt --seed 1
+
+# 中断后续训：权重、回放池、已完成步数一起恢复
+.venv/Scripts/python.exe -m az_worker.train \
+  --total-steps 25000 --iterations 100 --games 10 --device cuda \
+  --model models/az/current.pt --init models/az/current.pt \
+  --buffer-file models/az/replay.pt --resume
 ```
 
-每代自动执行“蒸馏 → 自对弈训练 → 擂台判定”，产物与状态都在 `models/az/evolution/`（被 `.gitignore` 排除）：`state.json` 记录 `champion`、`learner`、`baseline` 与每代战绩，`history[].baseline_winrate` 是判断是否真的进步的主指标。训练会占满显存，建议与 Worker 分开运行。
+默认预算在 RTX 4060 Laptop 上约 2–3 小时（实测：全盘 400 模拟 0.34 s/手，
+bs 256 梯度一步 17.9 ms）。要更强就加 `--total-steps`、`--games`、`--iterations`，
+方法与代码不用改。训练会占满显存，建议与 Worker 分开运行。
 
 ## 6. 故障排查
 

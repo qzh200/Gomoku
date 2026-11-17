@@ -40,17 +40,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"参数有误: {error}", file=sys.stderr)
         return 2
 
-    engine = AlphaZeroEngine(
-        model_path=settings.model_path,
-        device=settings.device,
-        simulations=settings.simulations,
-        c_puct=settings.c_puct,
-        batch_size=settings.batch_size,
-        candidate_radius=settings.candidate_radius,
-        candidate_width=settings.candidate_width,
-        time_budget=settings.time_budget,
-        temperature=settings.temperature,
-    )
+    try:
+        engine = AlphaZeroEngine(
+            model_path=settings.model_path,
+            device=settings.device,
+            simulations=settings.simulations,
+            batch_size=settings.batch_size,
+            time_budget=settings.time_budget,
+            temperature=settings.temperature,
+            vcf_budget=settings.vcf_budget,
+            vct_budget=settings.vct_budget,
+            solver_depth=settings.solver_depth,
+            solver_nodes=settings.solver_nodes,
+        )
+    except ValueError as error:
+        print(f"权重不可用: {error}", file=sys.stderr)
+        return 2
     worker = Worker(
         MyGoClient(settings.connection.mygo_url, settings.connection.engine_token),
         engine,

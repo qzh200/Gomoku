@@ -66,7 +66,7 @@ MyGo 是一个**本地优先**的五子棋桌面应用。Go 负责唯一权威�
 | --- | --- | --- | --- | --- |
 | `classical` | 传统搜索 | 6 格窗口棋型评估 + PVS + 置换表 + VCF/VCT | 纯 CPU，无外部服务 | 稳定、可复现的战术对局 |
 | `llm` | 大语言模型 | 精确棋形文字 + 0 基坐标 Prompt，解析 JSON 落子 | OpenAI 兼容 API | 可解释的自然语言推理、Prompt 研究 |
-| `az` | AlphaZero | 7 平面残差网络 + PUCT MCTS，教师预热 + 自对弈 + 自进化 | 本地 PyTorch + 权重 | 学习型局面直觉、长期策略 |
+| `az` | AlphaZero | 9 平面残差网络 + PUCT MCTS，纯自对弈训练（官方方法基线） | 本地 PyTorch + 权重 | 学习型局面直觉、长期策略 |
 
 另外提供 `mock_worker/`，只用于契约测试和链路排查，不参与正式对局。
 
@@ -81,7 +81,7 @@ flowchart LR
   APP --> MEM["内存仓储<br/>repository"]
   C["classical_worker<br/>窗口棋型 + PVS + VCF"] <-->|"领取 / 落子"| API
   L["llm_worker<br/>Prompt + 精确棋形"] <-->|"领取 / 落子"| API
-  A["az_worker<br/>7 平面 + PUCT"] <-->|"领取 / 落子"| API
+  A["az_worker<br/>9 平面 + PUCT"] <-->|"领取 / 落子"| API
   O["OpenAI 兼容服务"] <--> L
 ```
 
@@ -273,7 +273,7 @@ python -m unittest discover -s llm_worker/tests -t .
 | [`doc/02-worker-protocol.md`](doc/02-worker-protocol.md) | Worker 契约、长轮询、租约、幂等、失败处理 |
 | [`doc/03-classical-engine.md`](doc/03-classical-engine.md) | 窗口棋型、增量评估、威胁表、PVS、VCF/VCT |
 | [`doc/04-llm-engine.md`](doc/04-llm-engine.md) | 棋形原语、Prompt、解析、重试、推理模型适配 |
-| [`doc/05-az-engine.md`](doc/05-az-engine.md) | 7 平面特征、bitboard 威胁、网络、MCTS、训练 |
+| [`doc/05-az-engine.md`](doc/05-az-engine.md) | 9 平面特征、bitboard 威胁、网络、PUCT、纯自对弈训练、VCF/VCT、擂台 |
 | [`doc/06-desktop-ui.md`](doc/06-desktop-ui.md) | UI 分层、绘制、交互、复盘、主题 |
 | [`doc/07-comparison-and-operations.md`](doc/07-comparison-and-operations.md) | 引擎对比、评测、环境变量、运行手册、排障 |
 

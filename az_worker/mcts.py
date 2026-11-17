@@ -11,19 +11,15 @@ from .features import encode, legal_mask
 from .network import ACTION_COUNT, evaluate
 
 
-DEFAULT_C_PUCT = 1.5
+C_BASE = 19652.0
 
+C_INIT = 1.25
 
-DEFAULT_DIRICHLET_ALPHA = 0.3
+DIRICHLET_ALPHA = 0.05
 
+NOISE_WEIGHT = 0.25
 
-DEFAULT_NOISE_WEIGHT = 0.25
-
-
-DEFAULT_CANDIDATE_RADIUS = 1
-
-
-DEFAULT_CANDIDATE_WIDTH = 16
+DEFAULT_SIMULATIONS = 400
 
 
 def cell_of(row: int, col: int) -> int:
@@ -34,15 +30,19 @@ def row_col_of(cell: int) -> tuple[int, int]:
     return divmod(cell, BOARD_SIZE)
 
 
-def apply_noise(priors: list[float], alpha: float, weight: float, rng: random.Random) -> list[float]:
+def apply_noise(
+    priors: list[float],
+    alpha: float,
+    weight: float,
+    rng: random.Random,
+) -> list[float]:
     noise = [rng.gammavariate(alpha, 1.0) for _ in priors]
     total = sum(noise)
     if total <= 0:
         return priors
-    noise = [value / total for value in noise]
     return [
-        (1.0 - weight) * prior + weight * noisy
-        for prior, noisy in zip(priors, noise)
+        (1.0 - weight) * prior + weight * value / total
+        for prior, value in zip(priors, noise)
     ]
 
 
@@ -51,7 +51,7 @@ class Node:
         "children",
         "visits",
         "value_sum",
-        "virtual_visits",
+        "virtual_loss",
         "prior",
         "player",
         "terminal_value",
@@ -71,19 +71,12 @@ class Node:
     ) -> None:
         self.children: dict[int, Node] = {}
         self.visits = 0
-
-
         self.value_sum = 0.0
-
-
-        self.virtual_visits = 0
+        self.virtual_loss = 0
         self.prior = 0.0
         self.player = player
-
-
         self.terminal_value: float | None = None
         self.expanded = False
-
         self.last_move: tuple[int, int] | None = None
         self._board = board
         self._parent = parent
@@ -147,40 +140,35 @@ class MCTS:
         self,
         model,
         device,
-        c_puct: float = DEFAULT_C_PUCT,
-        dirichlet_alpha: float = DEFAULT_DIRICHLET_ALPHA,
-        noise_weight: float = DEFAULT_NOISE_WEIGHT,
+        c_base: float = C_BASE,
+        c_init: float = C_INIT,
+        dirichlet_alpha: float = DIRICHLET_ALPHA,
+        noise_weight: float = NOISE_WEIGHT,
         batch_size: int = 32,
-        candidate_radius: int = DEFAULT_CANDIDATE_RADIUS,
-        candidate_width: int = DEFAULT_CANDIDATE_WIDTH,
         time_budget: float | None = None,
         seed: int | None = None,
     ) -> None:
         self.model = model
         self.device = device
-        self.c_puct = c_puct
+        self.c_base = c_base
+        self.c_init = c_init
         self.dirichlet_alpha = dirichlet_alpha
         self.noise_weight = noise_weight
         self.batch_size = max(1, batch_size)
-        self.candidate_radius = candidate_radius
-        self.candidate_width = max(1, candidate_width)
         self.time_budget = time_budget
         self.rng = random.Random(seed)
-
 
     def search(
         self,
         board: Board,
         player: int,
-        simulations: int = 400,
+        simulations: int = DEFAULT_SIMULATIONS,
         add_noise: bool = False,
         last_move: tuple[int, int] | None = None,
         time_budget: float | None = None,
     ) -> SearchResult:
         root = Node(board.copy(), player)
         root.last_move = last_move
-
-
         self._expand(root, self._evaluate([root])[0])
         if add_noise:
             self._add_root_noise(root)
@@ -204,28 +192,29 @@ class MCTS:
             if leaf.terminal_value is not None:
                 self._backpropagate(path, leaf.terminal_value)
                 done += 1
-                continue
-            pending.append((leaf, path))
-            waiting.add(id(leaf))
-            if len(pending) >= self.batch_size:
-                self._flush(pending)
-                waiting.clear()
-            done += 1
+            elif leaf.expanded:
+                self._release(path)
+                done += 1
+            else:
+                pending.append((leaf, path))
+                waiting.add(id(leaf))
+                done += 1
+                if len(pending) >= self.batch_size:
+                    self._flush(pending)
+                    waiting.clear()
             if deadline is not None and done % 16 == 0 and time.monotonic() >= deadline:
                 break
 
         if pending:
             self._flush(pending)
-
         return self._collect(root)
-
 
     def _evaluate(self, nodes: list[Node]) -> np.ndarray:
         planes = []
         masks = []
         for node in nodes:
             planes.append(encode(node.board, node.player, node.last_move))
-            masks.append(legal_mask(node.board, self.candidate_radius))
+            masks.append(legal_mask(node.board))
         policies, _ = evaluate(self.model, np.stack(planes), np.stack(masks), self.device)
         return policies
 
@@ -236,44 +225,39 @@ class MCTS:
         masks = []
         for leaf, _ in pending:
             planes.append(encode(leaf.board, leaf.player, leaf.last_move))
-            masks.append(legal_mask(leaf.board, self.candidate_radius))
+            masks.append(legal_mask(leaf.board))
         policies, values = evaluate(
             self.model, np.stack(planes), np.stack(masks), self.device
         )
-
         for (leaf, path), policy, value in zip(pending, policies, values):
             self._expand(leaf, policy)
-            self._backpropagate(path, value)
+            self._backpropagate(path, float(value))
         pending.clear()
 
-    def _expand(self, node: Node, policy: list[float]) -> None:
+    def _expand(self, node: Node, policy: np.ndarray) -> None:
         node.expanded = True
-        moves = node.board.candidates(self.candidate_radius)
+        moves = node.board.empty_cells()
         if not moves:
             node.terminal_value = 0.0
             return
-        priors = [policy[cell_of(row, col)] for row, col in moves]
+        cells = [cell_of(row, col) for row, col in moves]
+        priors = [float(policy[cell]) for cell in cells]
         total = sum(priors)
         if total <= 0:
             priors = [1.0 / len(moves)] * len(moves)
         else:
             priors = [prior / total for prior in priors]
-        scored = sorted(
-            zip(moves, priors),
-            key=lambda item: item[1],
-            reverse=True,
-        )
-        keep = scored[: self.candidate_width]
-        for (row, col), prior in keep:
+        terminal = len(moves) == 1
+        for (row, col), prior in zip(moves, priors):
             won = node.board.wins_with(row, col, node.player)
             child = Node(None, other(node.player), parent=node, move=(row, col))
             child.prior = prior
             child.last_move = (row, col)
             if won:
                 child.terminal_value = -1.0
+            elif terminal:
+                child.terminal_value = 0.0
             node.children[cell_of(row, col)] = child
-        if node.board.is_full():
-            node.terminal_value = 0.0
 
     def _add_root_noise(self, root: Node) -> None:
         moves = list(root.children)
@@ -284,22 +268,22 @@ class MCTS:
         for move, prior in zip(moves, noisy):
             root.children[move].prior = prior
 
-
     def _descend(self, root: Node, waiting: set[int]) -> tuple[Node | None, list[Node]]:
         node = root
         path: list[Node] = [root]
-        root.virtual_visits += 1
+        root.virtual_loss += 1
         while node.expanded and node.terminal_value is None and node.children:
             move = self._select_child(node, waiting)
             if move is None:
                 return None, path
             child = node.children[move]
-            child.virtual_visits += 1
+            child.virtual_loss += 1
             path.append(child)
             node = child
         return node, path
 
     def _select_child(self, node: Node, waiting: set[int]) -> int | None:
+        c_puct = math.log((1 + node.visits + self.c_base) / self.c_base) + self.c_init
         sqrt_total = math.sqrt(max(node.visits, 1))
         best_move: int | None = None
         best_score = -math.inf
@@ -310,10 +294,8 @@ class MCTS:
                 quality = -child.value_sum / child.visits
             else:
                 quality = 0.0
-
-
             exploration = (
-                self.c_puct * child.prior * sqrt_total / (1 + child.visits + child.virtual_visits)
+                c_puct * child.prior * sqrt_total / (1 + child.visits + child.virtual_loss)
             )
             score = quality + exploration
             if score > best_score:
@@ -321,16 +303,15 @@ class MCTS:
                 best_move = move
         return best_move
 
-
     def _release(self, path: list[Node]) -> None:
         for node in path:
-            node.virtual_visits = max(0, node.virtual_visits - 1)
+            node.virtual_loss = max(0, node.virtual_loss - 1)
 
     def _backpropagate(self, path: list[Node], value: float) -> None:
         current = value
         for depth in range(len(path) - 1, -1, -1):
             node = path[depth]
-            node.virtual_visits = max(0, node.virtual_visits - 1)
+            node.virtual_loss = max(0, node.virtual_loss - 1)
             node.visits += 1
             node.value_sum += current
             current = -current
@@ -345,7 +326,5 @@ class MCTS:
         if total > 0:
             for move, child in root.children.items():
                 policy[move] = child.visits / total
-
-
         root_value = root.value_sum / root.visits if root.visits else 0.0
         return SearchResult(visits, policy, root_value, total)

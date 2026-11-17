@@ -81,7 +81,7 @@ flowchart LR
   APP --> MEM["In-memory store<br/>repository"]
   C["classical_worker<br/>patterns + PVS + VCF"] <-->|"claim / move"| API
   L["llm_worker<br/>prompt + exact threats"] <-->|"claim / move"| API
-  A["az_worker<br/>7 planes + PUCT"] <-->|"claim / move"| API
+  A["az_worker<br/>9 planes + PUCT"] <-->|"claim / move"| API
   O["OpenAI-compatible service"] <--> L
 ```
 
@@ -273,7 +273,7 @@ python -m unittest discover -s llm_worker/tests -t .
 | [`doc/02-worker-protocol.md`](doc/02-worker-protocol.md) | Worker contract, long polling, leases, idempotency, failures |
 | [`doc/03-classical-engine.md`](doc/03-classical-engine.md) | Window patterns, incremental evaluation, threats, PVS, VCF/VCT |
 | [`doc/04-llm-engine.md`](doc/04-llm-engine.md) | Threat primitives, prompt, parsing, retries, reasoning models |
-| [`doc/05-az-engine.md`](doc/05-az-engine.md) | 7 planes, bitboard threats, network, MCTS, training |
+| [`doc/05-az-engine.md`](doc/05-az-engine.md) | 9 planes, bitboard threats, network, PUCT, pure self-play training, VCF/VCT, arena |
 | [`doc/06-desktop-ui.md`](doc/06-desktop-ui.md) | UI layers, rendering, interaction, replay, themes |
 | [`doc/07-comparison-and-operations.md`](doc/07-comparison-and-operations.md) | Engine comparison, evaluation, env vars, runbook, troubleshooting |
 

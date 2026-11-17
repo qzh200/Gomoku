@@ -75,6 +75,15 @@ class Board:
     def is_full(self) -> bool:
         return len(self._stones) >= BOARD_CELLS
 
+    def empty_cells(self) -> list[tuple[int, int]]:
+        grid = self.grid
+        return [
+            (row, col)
+            for row in range(BOARD_SIZE)
+            for col in range(BOARD_SIZE)
+            if grid[row][col] == EMPTY
+        ]
+
     def candidates(self, radius: int = 2) -> list[tuple[int, int]]:
         if not self._stones:
             centre = BOARD_SIZE // 2

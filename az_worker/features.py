@@ -6,7 +6,7 @@ from .board import BOARD_SIZE
 from .threats import STRIDE, board_masks, threat_masks
 
 
-PLANE_COUNT = 7
+PLANE_COUNT = 9
 
 
 PLANE_SELF = 0
@@ -22,6 +22,10 @@ PLANE_OTHER_FIVE = 4
 PLANE_SELF_OPEN_FOUR = 5
 
 PLANE_OTHER_OPEN_FOUR = 6
+
+PLANE_SELF_OPEN_THREE = 7
+
+PLANE_OTHER_OPEN_THREE = 8
 
 
 def _transforms() -> list[tuple[int, int]]:
@@ -86,8 +90,9 @@ def _mark(plane: np.ndarray, mask: int) -> None:
 def as_planes(value) -> np.ndarray:
     array = np.asarray(value, dtype=np.float32)
     if array.shape != (PLANE_COUNT, BOARD_SIZE, BOARD_SIZE):
+        found = array.shape[0] if array.ndim == 3 else array.shape
         raise ValueError(
-            f"平面数是 {array.shape[0]}，现在是 {PLANE_COUNT}，这份数据过期了，要重新采集"
+            f"平面数是 {found}，现在是 {PLANE_COUNT}，这份数据过期了，要重新采集"
         )
     return array
 
@@ -95,22 +100,23 @@ def as_planes(value) -> np.ndarray:
 def encode(board, player: int, last_move: tuple[int, int] | None) -> np.ndarray:
     planes = np.zeros((PLANE_COUNT, BOARD_SIZE, BOARD_SIZE), dtype=np.float32)
     for row, col, stone in board.stones:
-        plane = PLANE_SELF if stone == player else PLANE_OTHER
-        planes[plane, row, col] = 1.0
+        planes[PLANE_SELF if stone == player else PLANE_OTHER, row, col] = 1.0
     if last_move is not None:
         planes[PLANE_LAST, last_move[0], last_move[1]] = 1.0
 
     own, other, empty = board_masks(board, player)
-    self_five, other_five, self_four, other_four = threat_masks(own, other, empty)
-    _mark(planes[PLANE_SELF_FIVE], self_five)
-    _mark(planes[PLANE_OTHER_FIVE], other_five)
-    _mark(planes[PLANE_SELF_OPEN_FOUR], self_four)
-    _mark(planes[PLANE_OTHER_OPEN_FOUR], other_four)
+    masks = threat_masks(own, other, empty)
+    _mark(planes[PLANE_SELF_FIVE], masks[0])
+    _mark(planes[PLANE_OTHER_FIVE], masks[1])
+    _mark(planes[PLANE_SELF_OPEN_FOUR], masks[2])
+    _mark(planes[PLANE_OTHER_OPEN_FOUR], masks[3])
+    _mark(planes[PLANE_SELF_OPEN_THREE], masks[4])
+    _mark(planes[PLANE_OTHER_OPEN_THREE], masks[5])
     return planes
 
 
-def legal_mask(board, radius: int = 1) -> np.ndarray:
+def legal_mask(board) -> np.ndarray:
     mask = np.zeros(BOARD_SIZE * BOARD_SIZE, dtype=np.float32)
-    for row, col in board.candidates(radius):
+    for row, col in board.empty_cells():
         mask[row * BOARD_SIZE + col] = 1.0
     return mask

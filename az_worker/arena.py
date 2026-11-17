@@ -10,8 +10,13 @@ from classical_worker.position import Position
 from classical_worker.search import Searcher
 
 from .board import BLACK, WHITE, Board, other
+from .config import (
+    DEFAULT_SOLVER_DEPTH,
+    DEFAULT_SOLVER_NODES,
+    DEFAULT_VCF_BUDGET,
+    DEFAULT_VCT_BUDGET,
+)
 from .engine import AlphaZeroEngine
-from .mcts import DEFAULT_CANDIDATE_WIDTH
 
 
 DEFAULT_GAMES = 10
@@ -78,7 +83,10 @@ def az_side(
     device: str,
     simulations: int,
     time_budget: float | None,
-    candidate_width: int,
+    vcf_budget: float = DEFAULT_VCF_BUDGET,
+    vct_budget: float = DEFAULT_VCT_BUDGET,
+    solver_depth: int = DEFAULT_SOLVER_DEPTH,
+    solver_nodes: int = DEFAULT_SOLVER_NODES,
     seed: int | None = None,
 ) -> AzSide:
     return AzSide(
@@ -86,8 +94,11 @@ def az_side(
             model_path=model_path,
             device=device,
             simulations=simulations,
-            candidate_width=candidate_width,
             time_budget=time_budget,
+            vcf_budget=vcf_budget,
+            vct_budget=vct_budget,
+            solver_depth=solver_depth,
+            solver_nodes=solver_nodes,
             seed=seed,
         )
     )
@@ -103,35 +114,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", default="models/az/current.pt", help="候选模型权重文件")
     parser.add_argument("--device", default="auto", help="auto、cpu、cuda 或 cuda:0")
     parser.add_argument("--simulations", type=int, default=DEFAULT_SIMULATIONS, help="候选每手模拟次数")
-    parser.add_argument(
-        "--candidate-width",
-        type=int,
-        default=DEFAULT_CANDIDATE_WIDTH,
-        help="候选每个节点保留的候选数",
-    )
     parser.add_argument("--time-budget", type=float, default=None, help="候选每手秒数上限")
+    parser.add_argument("--vcf-budget", type=float, default=DEFAULT_VCF_BUDGET, help="候选 VCF 预算")
+    parser.add_argument("--vct-budget", type=float, default=DEFAULT_VCT_BUDGET, help="候选 VCT 预算")
+    parser.add_argument("--solver-depth", type=int, default=DEFAULT_SOLVER_DEPTH)
+    parser.add_argument("--solver-nodes", type=int, default=DEFAULT_SOLVER_NODES)
     parser.add_argument(
         "--opponent",
         choices=("classical", "az"),
         default=DEFAULT_OPPONENT,
-        help="对手是谁：classical 是传统引擎，az 是旧的 AZ 权重",
+        help="对手是谁：classical 是传统引擎，az 是另一个 AZ 权重",
     )
     parser.add_argument(
         "--opponent-model",
         default=DEFAULT_OPPONENT_MODEL,
-        help="--opponent az 时的对手权重，通常是上一代的 champion",
+        help="--opponent az 时的对手权重",
     )
     parser.add_argument(
         "--opponent-simulations",
         type=int,
         default=DEFAULT_SIMULATIONS,
         help="--opponent az 时对手每手模拟次数",
-    )
-    parser.add_argument(
-        "--opponent-width",
-        type=int,
-        default=DEFAULT_CANDIDATE_WIDTH,
-        help="--opponent az 时对手每个节点保留的候选数",
     )
     parser.add_argument(
         "--opponent-time",
@@ -234,7 +237,10 @@ def main(argv: list[str] | None = None) -> int:
         args.device,
         args.simulations,
         args.time_budget,
-        args.candidate_width,
+        args.vcf_budget,
+        args.vct_budget,
+        args.solver_depth,
+        args.solver_nodes,
         seed=args.seed,
     )
     if args.opponent == "az":
@@ -248,7 +254,10 @@ def main(argv: list[str] | None = None) -> int:
             args.device,
             args.opponent_simulations,
             opponent_time,
-            args.opponent_width,
+            args.vcf_budget,
+            args.vct_budget,
+            args.solver_depth,
+            args.solver_nodes,
             seed=None if args.seed is None else args.seed + 1,
         )
         opponent_name = f"AZ {opponent_path}"
@@ -258,9 +267,7 @@ def main(argv: list[str] | None = None) -> int:
             args.classical_width,
             args.classical_time,
         )
-        opponent_name = (
-            f"传统引擎 d{args.classical_depth}/{args.classical_time} 秒"
-        )
+        opponent_name = f"传统引擎 d{args.classical_depth}/{args.classical_time} 秒"
 
     def report(game: int, winner: int | None, candidate_is_black: bool) -> None:
         if winner is None:

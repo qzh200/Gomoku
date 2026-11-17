@@ -3,6 +3,7 @@ from .engine import AlphaZeroEngine, EngineError
 from .features import PLANE_COUNT, encode, legal_mask
 from .mcts import MCTS, Node, SearchResult
 from .network import GomokuNet
+from .vcf import VCF, VCT, Solver, winning_move
 
 __all__ = [
     "BLACK",
@@ -10,6 +11,8 @@ __all__ = [
     "EMPTY",
     "MCTS",
     "PLANE_COUNT",
+    "VCF",
+    "VCT",
     "WHITE",
     "AlphaZeroEngine",
     "Board",
@@ -17,7 +20,9 @@ __all__ = [
     "GomokuNet",
     "Node",
     "SearchResult",
+    "Solver",
     "encode",
     "legal_mask",
     "other",
+    "winning_move",
 ]

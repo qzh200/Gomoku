@@ -12,9 +12,11 @@ from .selfplay import Example
 
 PERMUTATION_TABLE = torch.from_numpy(np.stack(CELL_PERMUTATIONS).astype(np.int64))
 
+DEFAULT_CAPACITY = 100_000
+
 
 class TensorDataset:
-    def __init__(self, device: torch.device, capacity: int = 60_000) -> None:
+    def __init__(self, device: torch.device, capacity: int = DEFAULT_CAPACITY) -> None:
         self.device = device
         self.capacity = max(1, capacity)
         self.planes = torch.zeros(
@@ -62,44 +64,16 @@ class TensorDataset:
         self.value[start:end] = value.to(self.device, non_blocking=True)
         self.count = end
 
-    def merge(self, other: "TensorDataset") -> None:
-        count = len(other)
-        if count == 0:
-            return
-        if count >= self.capacity:
-            self.planes[:] = other.planes[: self.capacity]
-            self.policy[:] = other.policy[: self.capacity]
-            self.legal[:] = other.legal[: self.capacity]
-            self.value[:] = other.value[: self.capacity]
-            self.count = self.capacity
-            return
-        start = self.count
-        end = start + count
-        if end > self.capacity:
-            keep = self.capacity - start
-            self.planes[start : self.capacity] = other.planes[:keep]
-            self.policy[start : self.capacity] = other.policy[:keep]
-            self.legal[start : self.capacity] = other.legal[:keep]
-            self.value[start : self.capacity] = other.value[:keep]
-            self.count = self.capacity
-        else:
-            self.planes[start:end] = other.planes[:count]
-            self.policy[start:end] = other.policy[:count]
-            self.legal[start:end] = other.legal[:count]
-            self.value[start:end] = other.value[:count]
-            self.count = end
-
     def sample(
         self,
         batch_size: int,
         rng: random.Random | None = None,
-        augment: bool = True,
+        augment: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         picker = rng or random.Random(0)
-        limit = self.count if self.count < self.capacity else self.capacity
         generator = torch.Generator().manual_seed(picker.randrange(1 << 30))
         indexes = torch.randint(
-            limit,
+            self.count,
             (batch_size,),
             generator=generator,
         ).to(self.device)
@@ -143,7 +117,7 @@ class TensorDataset:
     ) -> "TensorDataset":
         source = Path(path)
         if not source.is_file():
-            return cls(device, capacity or 60_000)
+            return cls(device, capacity or DEFAULT_CAPACITY)
         payload = torch.load(str(source), map_location="cpu", weights_only=False)
         if isinstance(payload, list):
             dataset = cls(device, capacity or max(len(payload), 1))
