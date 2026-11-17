@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import NamedTuple
 
 
 BOARD_SIZE = 15
@@ -133,7 +134,7 @@ def describe(found: Threats, player: int) -> list[str]:
     return lines
 
 
-def _spots(cells: list[tuple[int, int]], limit: int | None = None) -> str:
+def spots(cells: list[tuple[int, int]], limit: int | None = None) -> str:
     shown = cells if limit is None or len(cells) <= limit else cells[:limit]
     text = "、".join(f"({row}, {col})" for row, col in shown)
     if len(shown) < len(cells):

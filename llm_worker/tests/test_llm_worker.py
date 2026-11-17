@@ -237,15 +237,36 @@ class EngineTests(unittest.TestCase):
         )
         self.assertIn("白棋下在 (7, 11)、(7, 12) 就成冲四", prompt)
 
+    def test_the_prompt_names_the_only_move_against_an_immediate_five(self) -> None:
+        state = empty_board()
+        for col in range(7, 11):
+            state[7][col] = board.BLACK
+        state[7][6] = board.WHITE
+        client = FakeClient(['{"move": {"row": 7, "col": 11}}'])
+        engine = LLMEngine(client)
+        engine.choose_move(state, [], board.WHITE)
+        prompt = client.calls[0][1].content
+        self.assertIn(
+            "这一手：对方下在 (7, 11) 就成五，必须堵这里，下别处下一手就输。", prompt
+        )
+
+    def test_the_prompt_takes_its_own_open_four_before_anything_slower(self) -> None:
+        state = empty_board()
+        for col in range(8, 11):
+            state[7][col] = board.WHITE
+        state[0][0] = board.BLACK
+        client = FakeClient(['{"move": {"row": 7, "col": 11}}'])
+        engine = LLMEngine(client)
+        engine.choose_move(state, [], board.WHITE)
+        prompt = client.calls[0][1].content
+        self.assertIn("这一手：白棋下在 (7, 7)、(7, 11) 就成活四，对方挡不住。", prompt)
+
     def test_the_prompt_says_so_when_a_side_has_no_threat(self) -> None:
         client = FakeClient(['{"move": {"row": 7, "col": 7}}'])
         engine = LLMEngine(client)
         engine.choose_move(empty_board(), [], board.BLACK)
         prompt = client.calls[0][1].content
         self.assertIn("- 没有成五、活四或冲四的落点。", prompt)
-        self.assertIn(
-            "这一手：对方下在 (7, 11) 就成五，必须堵这里，下别处下一手就输。", prompt
-        )
 
     def test_asks_again_when_the_cell_is_taken(self) -> None:
         state = empty_board()
