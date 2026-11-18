@@ -31,6 +31,15 @@ func stdoutUsable() bool {
 	return handle != 0 && handle != invalid
 }
 
+// CREATE_NO_WINDOW：不给控制台子系统子进程分配控制台窗口。
+// Worker 仍能写 stdout（重定向到我们的管道 → logs/），但屏幕上不弹黑框。
+const createNoWindow = 0x08000000
+
+// hideWindow 让子进程启动时不出现控制台窗口。
+func hideWindow(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow}
+}
+
 // fatal 打印错误；无控制台时弹窗，否则双击运行时错误不可见。
 func fatal(format string, args ...any) {
 	message := fmt.Sprintf(format, args...)

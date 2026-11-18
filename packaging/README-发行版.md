@@ -5,6 +5,7 @@
 1. `mygo.exe` —— 棋局服务 + 原生桌面界面（窗口标题「五子棋」）；
 2. 三个 AI Worker —— `classical`（传统搜索）、`llm`（大模型）、`az`（AlphaZero）。
 
+三个 Worker 在后台运行，**没有独立控制台窗口**；它们的输出见 `logs/`。
 关闭窗口后，启动器和全部 Worker 一起退出。
 
 ## 目录
@@ -20,7 +21,7 @@
 | `classical_worker/.env` | 传统引擎参数：`CLASSICAL_DEPTH`、`CLASSICAL_WIDTH`、`CLASSICAL_TIME_BUDGET` … |
 | `llm_worker/.env` | 大模型参数：`OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL` … |
 | `az_worker/.env` | AlphaZero 参数：`AZ_MODEL_PATH`、`AZ_DEVICE`、`AZ_TIME_BUDGET` … |
-| `logs/` | 双击启动时没有控制台，三个 Worker 的输出分别写到 `logs/{classical,llm,az}.log` |
+| `logs/` | 三个 Worker 的输出分别写到 `logs/{classical,llm,az}.log`（无控制台窗口） |
 
 ## 配置
 

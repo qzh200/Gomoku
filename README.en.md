@@ -238,7 +238,8 @@ The bundle ships `Gomoku.exe` (launcher), `mygo.exe` (API + desktop UI), `worker
 (a PyInstaller-frozen Python runtime with CPU PyTorch), `models/az/run_last.pt`,
 `configs/engines.json`, and one `.env` per worker. Double-clicking `Gomoku.exe`
 starts the main program, waits for `engines.runtime.json` to carry the tokens,
-then launches the workers and shuts everything down together.
+then launches the workers (no console windows; their output goes to `logs/`)
+and shuts everything down together.
 
 | Path | Contents |
 | --- | --- |

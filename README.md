@@ -238,7 +238,8 @@ powershell -ExecutionPolicy Bypass -File packaging/build.ps1
 `workers/`（PyInstaller 冻结的 Python 运行时，已含 CPU 版 PyTorch）、
 `models/az/run_last.pt`（AlphaZero 权重）、`configs/engines.json` 与三个
 Worker 的 `.env`。双击 `Gomoku.exe` 会先起主程序，等 `engines.runtime.json`
-写好令牌后再拉起 Worker，关窗口时统一退出。
+写好令牌后再拉起 Worker（三个 Worker 不弹控制台窗口，输出写 `logs/`），
+关窗口时统一退出。
 
 | 路径 | 内容 |
 | --- | --- |
