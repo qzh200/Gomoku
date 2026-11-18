@@ -179,6 +179,7 @@ func startWorker(root, runtime string, isFrozen bool, w worker) *exec.Cmd {
 	)
 	cmd.Stdout = prefixed(w.name)
 	cmd.Stderr = prefixed(w.name)
+	hideWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "启动 %s Worker 失败: %v\n", w.name, err)
 		return nil
