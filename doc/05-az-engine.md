@@ -56,7 +56,7 @@ flowchart LR
 | 残差块 | Conv-BN-ReLU → Conv-BN → Add → ReLU | 同左（post-activation） |
 | 塔 | 20/40 块 × 256 通道 | **6 块 × 64 通道** |
 | 策略头 | 2 通道 1×1 → BN → ReLU → FC(棋盘) | 同左（FC 225） |
-| 价值头 | 1 通道 1×1 → BN → ReLU → FC256 → ReLU → FC1 → tanh | FC64 |
+| 价值头 | 1 通道 1×1 → BN → ReLU → FC256 → ReLU → FC1 → tanh | 新训练默认 4 通道，FC64 |
 | 搜索 | PUCT，`c_base=19652`，`c_init=1.25` | 同左 |
 | 模拟数 | 800 | **400 / 800 / 1600** 分段 |
 | 候选动作 | 全盘合法点 | 训练默认半径 2，强制战术覆盖基础候选 |
@@ -153,10 +153,10 @@ DIRECTIONS = (1, 20, 21, 19)      # 横、竖、主对角、副对角
 
 ## 5. 网络
 
-默认 `network.GomokuNet(channels=64, blocks=6, value_hidden=64)`：残差塔之后分出
-策略头（225 个 logits）与价值头（一个 tanh 标量）。用 `--channels 128 --blocks 10`
-可以扩大网络，只在没有起始权重时生效。是否容量不足不能只看损失与目标熵的差距，
-还要看新数据上的误差和对战表现。
+从随机网络开始训练时，默认使用 6 个残差块、64 个塔通道和 64 个价值隐层单元。
+残差塔之后分出策略头（225 个 logits）与价值头（一个 tanh 标量）。价值头的 1×1 卷积
+默认输出 4 张特征图，再展平送入全连接层。可以用 `--value-channels` 调节这一步的宽度，
+或用 `--channels 128 --blocks 10` 扩大残差塔。加载起始权重时，模型尺寸取自检查点。
 
 推理时 logits 在非法点上填 `-1e9` 后做 softmax，价值落在 `[-1, 1]`。
 
@@ -340,6 +340,7 @@ U(s,a) = c(s) * P(s,a) * sqrt(max(N(s),1)) / (1 + N(s,a) + virtual_loss)
 | `--augment` / `--no-augment` | 开 | 八对称增强 |
 | `--device` / `--model` / `--init` / `--seed` | auto / `models/az/current.pt` / 同 model / 0 | 运行参数；重训建议显式使用新路径 |
 | `--channels` / `--blocks` / `--value-hidden` | 64 / 6 / 64 | 网络规模（从随机网络起步时生效） |
+| `--value-channels` | 4 | 价值头 1×1 卷积输出通道数（从随机网络起步时生效） |
 | `--buffer-file` / `--resume` | 无 / 关 | 回放池落盘与续训 |
 | `--log-file` | auto | 每轮追加一行 CSV；auto = 权重同目录的 `<model>.log`，`none` 关闭 |
 | `--tensorboard` | auto | 事件目录；auto = 权重同目录的 `tensorboard/<权重名>/`（每个 run 一个子目录，TensorBoard 才分得开），`none` 关闭 |

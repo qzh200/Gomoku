@@ -46,6 +46,7 @@ CHANNELS = 64
 BLOCKS = 6
 
 VALUE_HIDDEN = 64
+VALUE_CHANNELS = 4
 
 SEARCH_BATCH = 32
 
@@ -229,6 +230,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--channels", type=int, default=CHANNELS, help="残差塔通道数")
     parser.add_argument("--blocks", type=int, default=BLOCKS, help="残差块数量")
     parser.add_argument("--value-hidden", type=int, default=VALUE_HIDDEN, help="价值头隐层宽度")
+    parser.add_argument(
+        "--value-channels",
+        type=int,
+        default=VALUE_CHANNELS,
+        help="从随机网络起步时，价值头 1×1 卷积的输出通道数",
+    )
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
     parser.add_argument("--buffer-file", default=None, help="回放缓冲区存档文件")
     parser.add_argument(
@@ -291,8 +298,14 @@ def main(argv: list[str] | None = None) -> int:
     if start_path.is_file():
         model = load_model(str(start_path), device)
     else:
+        if args.value_channels < 1:
+            print("--value-channels 必须为正整数", flush=True)
+            return 2
         model = GomokuNet(
-            channels=args.channels, blocks=args.blocks, value_hidden=args.value_hidden
+            channels=args.channels,
+            blocks=args.blocks,
+            value_hidden=args.value_hidden,
+            value_channels=args.value_channels,
         ).to(device)
         print(f"没有权重文件，从随机网络开始: {start_path}", flush=True)
 
