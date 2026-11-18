@@ -298,9 +298,12 @@ U(s,a) = c(s) * P(s,a) * sqrt(max(N(s),1)) / (1 + N(s,a) + virtual_loss)
 
 `train.py` 每轮：
 
-1. 用**当前最新网络**自对弈 `--games` 局（默认至少 32 局），样本进回放池；
+1. 用**当前最新网络**自对弈 `--games` 局（默认至少 32 局），样本进回放池。从零训练默认
+   每 5 轮另外跟传统引擎打 8 局，轮流执黑执白。传统对局记录 AZ 行棋前的棋盘和 AZ 搜索给出
+   的策略目标，并用这局的实际结果标注 AZ 行棋方的价值；
 2. 练 `--total-steps / --iterations` 步（默认 25,000 / 1,000 = 25 步）：
-   每步按当前步数设置学习率、均匀采 256 条、`train_batch`；
+   每步按当前步数设置学习率、抽样并调用 `train_batch`。有传统对局的轮次从本轮传统对局
+   样本抽取约四分之一的批次，其余从全池均匀抽取。传统对局样本留在回放池供后续训练；
 3. 保存检查点（含 `step` 元数据）与回放池；
 4. 打印步数、学习率、模拟数、自对弈胜负、缓冲大小、策略/价值损失与用时。
 
@@ -344,6 +347,8 @@ U(s,a) = c(s) * P(s,a) * sqrt(max(N(s),1)) / (1 + N(s,a) + virtual_loss)
 | `--buffer-file` / `--resume` | 无 / 关 | 回放池落盘与续训 |
 | `--log-file` | auto | 每轮追加一行 CSV；auto = 权重同目录的 `<model>.log`，`none` 关闭 |
 | `--tensorboard` | auto | 事件目录；auto = 权重同目录的 `tensorboard/<权重名>/`（每个 run 一个子目录，TensorBoard 才分得开），`none` 关闭 |
+| `--classical-train-every` / `--classical-train-games` | 5 / 8（从零训练） | 每 N 轮加入传统对局和局数。加载已有权重时需显式启用，`--classical-train-every 0` 关闭 |
+| `--classical-train-depth` / `--classical-train-time` | 2 / 0.05 | 训练对手的搜索深度与每手时间（秒） |
 | `--eval-every` / `--eval-games` | 50 / 8 | 每 N 轮跟传统引擎做棋力探针及其局数（0 = 关） |
 | `--eval-simulations` / `--eval-vcf` / `--eval-vct` | 512 / 0.1 / 0.1 | 探针每手的搜索预算与解算器预算 |
 | `--eval-classical-depth` / `--eval-classical-time` | 2 / 0.05 | 探针对手强度 |
@@ -386,7 +391,7 @@ CUDA 上下文，进程数不再受显存限制，请求按批合并后转发到
 | --- | --- | --- |
 | tqdm | 终端 | 每轮一个步数进度条（含吞吐与剩余时间），外加总轮数进度条 |
 | CSV | `<model>.log` | `time,iteration,step,learning_rate,simulations,games,total_games,wins,losses,draws,plies,buffer,policy_loss,value_loss,steps_per_second,seconds,eval_winrate` |
-| TensorBoard | 权重同目录的 `tensorboard/<权重名>/` | 每 5 步：`train/{loss,policy_loss,value_loss,learning_rate}`；每轮：`selfplay/{plies,simulations,games_total}`、`replay/buffer`、`time/{iteration_seconds,steps_per_second}`、`eval/{winrate,games}` |
+| TensorBoard | 权重同目录的 `tensorboard/<权重名>/` | `train/{loss,policy_loss,value_loss,learning_rate}`、`selfplay/{plies,simulations,games_total}`、`replay/buffer`、`time/{iteration_seconds,steps_per_second}`、`classical_train/{games,samples}`、`eval/{winrate,games}` |
 | 检查点 | `<model>.pt` | 权重 + `meta`（`step`、`iteration`、`games`、`lr`、`simulations`、`total_steps`）+ 优化器状态（SGD 动量） |
 
 ```sh

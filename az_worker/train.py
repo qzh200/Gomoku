@@ -11,6 +11,7 @@ from pathlib import Path
 
 import torch
 
+from .board import BLACK, WHITE
 from .dataset import TensorDataset
 from .inference import serve
 from .network import GomokuNet, load_model, read_extra, read_meta, train_batch
@@ -30,6 +31,8 @@ TOTAL_STEPS = 25_000
 ITERATIONS = 1_000
 
 GAMES_PER_ITERATION = 32
+CLASSICAL_TRAIN_EVERY = 5
+CLASSICAL_TRAIN_GAMES = 8
 
 BATCH_SIZE = 256
 
@@ -237,6 +240,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="从随机网络起步时，价值头 1×1 卷积的输出通道数",
     )
     parser.add_argument("--seed", type=int, default=None, help="随机种子")
+    parser.add_argument(
+        "--classical-train-every",
+        type=int,
+        default=None,
+        help="每隔多少轮加入传统引擎对局作为训练数据（从零训练默认 5，0 关闭）",
+    )
+    parser.add_argument("--classical-train-games", type=int, default=CLASSICAL_TRAIN_GAMES)
+    parser.add_argument("--classical-train-depth", type=int, default=2)
+    parser.add_argument("--classical-train-time", type=float, default=0.05, help="传统对手每手秒数")
     parser.add_argument("--buffer-file", default=None, help="回放缓冲区存档文件")
     parser.add_argument(
         "--log-file",
@@ -277,7 +289,8 @@ def resolve_device(name: str) -> torch.device:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     if args.total_steps < 1 or args.iterations < 1:
         print("--total-steps 与 --iterations 必须为正", flush=True)
         return 2
@@ -295,7 +308,19 @@ def main(argv: list[str] | None = None) -> int:
             else args.log_file
         )
     start_path = Path(args.init) if args.init else model_path
-    if start_path.is_file():
+    has_start_model = start_path.is_file()
+    if args.classical_train_every is None:
+        args.classical_train_every = 0 if has_start_model or args.resume else CLASSICAL_TRAIN_EVERY
+    if args.classical_train_every < 0:
+        parser.error("--classical-train-every 必须大于或等于 0")
+    if args.classical_train_every > 0:
+        if args.classical_train_games < 1:
+            parser.error("--classical-train-games 必须为正整数")
+        if args.classical_train_depth < 2:
+            parser.error("--classical-train-depth 至少为 2")
+        if not math.isfinite(args.classical_train_time) or args.classical_train_time < 0.05:
+            parser.error("--classical-train-time 至少为 0.05 秒")
+    if has_start_model:
         model = load_model(str(start_path), device)
     else:
         if args.value_channels < 1:
@@ -436,6 +461,16 @@ def main(argv: list[str] | None = None) -> int:
         started = time.monotonic()
         step_started = step
         simulations = args.simulations or simulations_for(step, args.total_steps)
+        classical_matchups = []
+        if args.classical_train_every and iteration % args.classical_train_every == 0:
+            classical_matchups = [
+                (
+                    BLACK if index % 2 == 0 else WHITE,
+                    args.classical_train_depth,
+                    args.classical_train_time,
+                )
+                for index in range(args.classical_train_games)
+            ]
         if pool is not None:
             save_checkpoint(model, model_path, {"step": step, "games": games_done})
             stamp = checkpoint_stamp(str(model_path))
@@ -447,10 +482,15 @@ def main(argv: list[str] | None = None) -> int:
                     args.search_batch,
                     rng.randrange(1 << 30),
                 )
-                for _ in range(games)
+                for _ in range(games + len(classical_matchups))
             ]
-            futures = [pool.submit(worker_play, task) for task in tasks]
+            futures = [pool.submit(worker_play, task) for task in tasks[:games]]
+            classical_futures = [
+                pool.submit(worker_play, task, matchup)
+                for task, matchup in zip(tasks[games:], classical_matchups)
+            ]
             games_played = [future.result() for future in futures]
+            classical_played = [future.result() for future in classical_futures]
         else:
             player = SelfPlay(
                 model,
@@ -463,6 +503,7 @@ def main(argv: list[str] | None = None) -> int:
                 radius=args.candidate_radius,
             )
             games_played = [player.play_game() for _ in range(games)]
+            classical_played = [player.play_classical(*matchup) for matchup in classical_matchups]
         wins = {1: 0, 2: 0, None: 0}
         plies = 0
         for game in games_played:
@@ -470,6 +511,12 @@ def main(argv: list[str] | None = None) -> int:
             wins[game.winner] = wins.get(game.winner, 0) + 1
             plies += game.moves
         games_done += len(games_played)
+        classical_samples = 0
+        for game in classical_played:
+            dataset.extend(game.examples)
+            classical_samples += len(game.examples)
+        classical_samples = min(classical_samples, len(dataset))
+        classical_batch_size = max(1, args.batch_size // 4) if classical_samples else 0
 
         losses: list[float] = []
         policy_losses: list[float] = []
@@ -488,9 +535,19 @@ def main(argv: list[str] | None = None) -> int:
             current_lr = learning_rate(step, args.total_steps, args.lr)
             for group in optimizer.param_groups:
                 group["lr"] = current_lr
-            planes, target_policy, mask, target_value = dataset.sample(
+            batch = dataset.sample(
                 args.batch_size, rng, augment=args.augment
             )
+            if classical_batch_size:
+                classical_batch = dataset.sample(
+                    classical_batch_size,
+                    rng,
+                    augment=args.augment,
+                    start_index=len(dataset) - classical_samples,
+                )
+                for target, samples in zip(batch, classical_batch):
+                    target[:classical_batch_size] = samples
+            planes, target_policy, mask, target_value = batch
             loss, policy_loss, value_loss = train_batch(
                 model,
                 optimizer,
@@ -572,6 +629,9 @@ def main(argv: list[str] | None = None) -> int:
             writer.add_scalar("time/iteration_seconds", elapsed, step)
             writer.add_scalar("time/steps_per_second", per_second, step)
             writer.add_scalar("selfplay/games_total", games_done, step)
+            if classical_played:
+                writer.add_scalar("classical_train/games", len(classical_played), step)
+                writer.add_scalar("classical_train/samples", classical_samples, step)
             writer.flush()
 
         if log_path:
@@ -599,6 +659,12 @@ def main(argv: list[str] | None = None) -> int:
             )
         outer.update(1)
         outer.set_postfix(step=f"{step}/{args.total_steps}")
+        if classical_played:
+            print(
+                f"传统对局训练（第 {iteration} 轮）: {len(classical_played)} 局，"
+                f"回放 {classical_samples} 条，每批指定抽取 {classical_batch_size} 条",
+                flush=True,
+            )
         print(
             f"第 {iteration} 轮: 步 {step}/{args.total_steps}，学习率 "
             f"{learning_rate(step, args.total_steps, args.lr):.6g}，模拟 {simulations}，"

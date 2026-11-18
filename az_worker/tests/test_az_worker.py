@@ -494,6 +494,25 @@ class SearchTests(unittest.TestCase):
 
 
 class SelfPlayTests(unittest.TestCase):
+    def test_opponent_games_record_only_model_turns_and_label_the_result(self) -> None:
+        class RowSolver:
+            def move(self, board, player):
+                return 14, sum(stone == player for _, _, stone in board.stones)
+
+        def opponent(board, player):
+            return 0, sum(stone == player for _, _, stone in board.stones)
+
+        player = SelfPlay(small_model(), DEVICE, solver=RowSolver())
+        black = player.play_game(opponent=opponent, model_side=BLACK)
+        white = player.play_game(opponent=opponent, model_side=WHITE)
+        self.assertEqual((black.moves, len(black.examples), black.winner), (9, 5, BLACK))
+        self.assertEqual((white.moves, len(white.examples), white.winner), (9, 4, BLACK))
+        self.assertEqual([example.value for example in black.examples], [1.0] * 5)
+        self.assertEqual([example.value for example in white.examples], [-1.0] * 4)
+        for column, example in enumerate(white.examples):
+            self.assertEqual(example.planes[PLANE_LAST, 0, column], 1.0)
+            self.assertEqual(example.policy.argmax(), cell_of(14, column))
+
     def test_a_game_produces_examples(self) -> None:
         player = SelfPlay(small_model(), DEVICE, simulations=6, batch_size=4, seed=1)
         game = player.play_game()

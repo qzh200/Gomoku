@@ -69,10 +69,13 @@ class TensorDataset:
         batch_size: int,
         rng: random.Random | None = None,
         augment: bool = False,
+        *,
+        start_index: int = 0,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         picker = rng or random.Random(0)
         generator = torch.Generator().manual_seed(picker.randrange(1 << 30))
         indexes = torch.randint(
+            start_index,
             self.count,
             (batch_size,),
             generator=generator,

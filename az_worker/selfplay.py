@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
 from multiprocessing import Pipe
 from pathlib import Path
@@ -68,7 +69,12 @@ class SelfPlay:
             radius=radius,
         )
 
-    def play_game(self) -> GameResult:
+    def play_game(
+        self,
+        *,
+        opponent: Callable[[Board, int], tuple[int, int] | None] | None = None,
+        model_side: int = BLACK,
+    ) -> GameResult:
         board = Board()
         player = BLACK
         examples: list[Example] = []
@@ -77,6 +83,16 @@ class SelfPlay:
         winner: int | None = None
 
         while not board.is_full():
+            if opponent is not None and player != model_side:
+                last_move = opponent(board, player)
+                if last_move is None:
+                    break
+                if board.play(*last_move, player):
+                    winner = player
+                    break
+                player = other(player)
+                continue
+
             move = None
             policy = None
             if self.solver is not None:
@@ -87,7 +103,7 @@ class SelfPlay:
                     policy = np.zeros(ACTION_COUNT, dtype=np.float32)
                     policy[move] = 1.0
             if move is None:
-                temperature = 1.0 if len(examples) < self.temperature_moves else 0.0
+                temperature = 1.0 if len(board.stones) < self.temperature_moves else 0.0
                 result = self.searcher.search(
                     board,
                     player,
@@ -120,7 +136,16 @@ class SelfPlay:
             else:
                 example.value = 1.0 if winner == side else -1.0
 
-        return GameResult(winner, len(examples), examples)
+        return GameResult(winner, len(board.stones), examples)
+
+    def play_classical(self, model_side: int, depth: int, time_budget: float) -> GameResult:
+        from .arena import classical_side
+
+        opponent = classical_side(depth, 12, time_budget)
+        return self.play_game(
+            opponent=lambda board, side: opponent.choose(board, side, None),
+            model_side=model_side,
+        )
 
 
 def save_checkpoint(
@@ -171,7 +196,10 @@ def checkpoint_stamp(path: str | Path) -> int:
     return Path(path).stat().st_mtime_ns
 
 
-def worker_play(task: tuple[str, int, int, int, int]) -> GameResult:
+def worker_play(
+    task: tuple[str, int, int, int, int],
+    classical: tuple[int, int, float] | None = None,
+) -> GameResult:
     model_path, stamp, simulations, batch_size, seed = task
     evaluator = _WORKER.get("evaluator")
     model = None
@@ -195,4 +223,6 @@ def worker_play(task: tuple[str, int, int, int, int]) -> GameResult:
         solver=_WORKER.get("solver"),
         radius=_WORKER.get("radius", 0),
     )
+    if classical is not None:
+        return player.play_classical(*classical)
     return player.play_game()
