@@ -45,7 +45,7 @@ func hideWindow(cmd *exec.Cmd) {
 func fatal(format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	if !stdoutUsable() {
-		title, _ := syscall.UTF16PtrFromString("MyGo 启动失败")
+		title, _ := syscall.UTF16PtrFromString("五子棋 启动失败")
 		body, _ := syscall.UTF16PtrFromString(message)
 		_, _, _ = messageBox.Call(0, uintptr(unsafe.Pointer(body)), uintptr(unsafe.Pointer(title)), 0x10)
 		return

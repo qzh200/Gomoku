@@ -228,14 +228,14 @@ Engine identity always comes from the token. The server never trusts an engine n
 
 ## Packaging
 
-Build the Windows release (a `dist/MyGo/` folder plus `dist/MyGo-win64.zip`):
+Build the Windows release (a `dist/Gomoku/` folder plus `dist/Gomoku-win64.zip`):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging/build.ps1
 ```
 
-The bundle ships `Gomoku.exe` (launcher), `mygo.exe` (API + desktop UI), `workers/`
-(a PyInstaller-frozen Python runtime with CPU PyTorch), `models/az/run_last.pt`,
+The bundle ships `Gomoku.exe` (launcher), `GomokuApp.exe` (API + desktop UI), `runtime/`
+(a frozen engine runtime with CPU PyTorch), `models/az/run_last.pt`,
 `configs/engines.json`, and one `.env` per worker. Double-clicking `Gomoku.exe`
 starts the main program, waits for `engines.runtime.json` to carry the tokens,
 then launches the workers (no console windows; their output goes to `logs/`)

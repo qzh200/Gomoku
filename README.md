@@ -228,14 +228,14 @@ python -m llm_worker
 
 ## 打包发布
 
-一键构建 Windows 发行包（`dist/MyGo/` 目录 + `dist/MyGo-win64.zip`）：
+一键构建 Windows 发行包（`dist/Gomoku/` 目录 + `dist/Gomoku-win64.zip`）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging/build.ps1
 ```
 
-发行包内包含：`Gomoku.exe`（启动器）、`mygo.exe`（API + 桌面 UI）、
-`workers/`（PyInstaller 冻结的 Python 运行时，已含 CPU 版 PyTorch）、
+发行包内包含：`Gomoku.exe`（启动器）、`GomokuApp.exe`（API + 桌面 UI）、
+`runtime/`（冻结的引擎运行时，已含 CPU 版 PyTorch）、
 `models/az/run_last.pt`（AlphaZero 权重）、`configs/engines.json` 与三个
 Worker 的 `.env`。双击 `Gomoku.exe` 会先起主程序，等 `engines.runtime.json`
 写好令牌后再拉起 Worker（三个 Worker 不弹控制台窗口，输出写 `logs/`），
@@ -243,7 +243,7 @@ Worker 的 `.env`。双击 `Gomoku.exe` 会先起主程序，等 `engines.runtim
 
 | 路径 | 内容 |
 | --- | --- |
-| `packaging/build.ps1` | 四步构建：两个 Go 产物 → PyInstaller → 组装打 zip |
+| `packaging/build.ps1` | 四步构建：两个可执行文件 → 引擎运行时 → 组装打 zip |
 | `packaging/pack.ps1` | 摆放文件、复制配置模板、压缩 |
 | `packaging/launcher/` | 启动器源码（进程编排、令牌等待、日志前缀） |
 | `packaging/worker_entry.py` | `--worker {classical,llm,az}` 派发到对应 `__main__` |

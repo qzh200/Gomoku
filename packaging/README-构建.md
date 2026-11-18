@@ -1,6 +1,6 @@
 # 构建 Windows 发行包
 
-产物：`dist/MyGo/`（可直接运行目录）与 `dist/MyGo-win64.zip`（分发包）。
+产物：`dist/Gomoku/`（可直接运行目录）与 `dist/Gomoku-win64.zip`（分发包）。
 
 ```powershell
 # 一次性准备打包环境（CPU 版 torch，GPU 版会把包撑到数 GB）
@@ -16,14 +16,14 @@ powershell -ExecutionPolicy Bypass -File packaging/build.ps1
 
 | 步骤 | 命令 | 产物 |
 | --- | --- | --- |
-| 1 | `go build ./cmd/app` | `dist/mygo.exe`（API + 桌面 UI） |
+| 1 | `go build ./cmd/app` | `dist/GomokuApp.exe`（API + 桌面 UI） |
 | 2 | `go build ./packaging/launcher` | `dist/Gomoku.exe`（启动器） |
-| 3 | `PyInstaller --onedir packaging/worker_entry.py` | `dist/workers/`（冻结 Python + torch） |
-| 4 | `export_model.py` + `pack.ps1` | `dist/MyGo/`、`dist/MyGo-win64.zip` |
+| 3 | `PyInstaller --onedir packaging/worker_entry.py` | `dist/GomokuWorkers/`（冻结引擎运行时） |
+| 4 | `export_model.py` + `pack.ps1` | `dist/Gomoku/`、`dist/Gomoku-win64.zip` |
 
 ## 为什么是 CPU 版 torch
 
-发行包里的 `workers/` 用 CPU 版 torch：
+发行包里的 `runtime/` 用 CPU 版 torch：
 
 - CUDA 版 `torch` 单独 4.2 GB，PyInstaller 打出来的目录装不进普通 zip 分发；
 - AlphaZero 每手 2 秒预算在 CPU 上完全够用（网络是 64 通道 × 6 残差块）；
@@ -40,9 +40,9 @@ powershell -ExecutionPolicy Bypass -File packaging/build.ps1
 ## 校验
 
 ```powershell
-# Worker 能起来（参数文件缺失时报错即可，说明入口通了）
-dist/workers/workers.exe --worker classical --env-file dist/MyGo/classical_worker/.env
+# 引擎运行时能起来（参数文件缺失时报错即可，说明入口通了）
+dist/GomokuWorkers/GomokuWorkers.exe --worker classical --env-file dist/Gomoku/classical_worker/.env
 
 # 完整发行目录
-cd dist/MyGo; ./MyGo.exe
+cd dist/Gomoku; ./Gomoku.exe
 ```

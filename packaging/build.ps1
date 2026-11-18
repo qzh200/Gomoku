@@ -1,4 +1,4 @@
-﻿# 一键构建 Windows 发行包：dist/MyGo/ 与 dist/MyGo-win64.zip
+﻿# 一键构建 Windows 发行包：dist/Gomoku/ 与 dist/Gomoku-win64.zip
 #
 #   powershell -ExecutionPolicy Bypass -File packaging/build.ps1
 #
@@ -12,19 +12,19 @@ Set-Location $root
 $env:GOPROXY = "off"
 New-Item -ItemType Directory -Force dist, build/pyinstaller | Out-Null
 
-Write-Host "[1/4] mygo.exe（Go 主程序：API + 桌面 UI）"
-go build -buildvcs=false -ldflags "-H windowsgui -s -w" -o dist/mygo.exe ./cmd/app
+Write-Host "[1/4] GomokuApp.exe（主程序：API + 桌面 UI）"
+go build -buildvcs=false -ldflags "-H windowsgui -s -w" -o dist/GomokuApp.exe ./cmd/app
 if ($LASTEXITCODE -ne 0) { throw "go build ./cmd/app 失败" }
 
-Write-Host "[2/4] Gomoku.exe（启动器：主程序 + Worker 生命周期）"
+Write-Host "[2/4] Gomoku.exe（启动器：主程序 + 引擎进程生命周期）"
 go build -buildvcs=false -ldflags "-H windowsgui -s -w" -o dist/Gomoku.exe ./packaging/launcher
 if ($LASTEXITCODE -ne 0) { throw "go build ./packaging/launcher 失败" }
 
-Write-Host "[3/4] workers/（PyInstaller 冻结 Python + torch，onedir）"
+Write-Host "[3/4] GomokuWorkers/（冻结的引擎运行时，onedir）"
 $python = ".venv-pack/Scripts/python.exe"
 $pyinstaller = @(
     "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--console",
-    "--name", "workers", "--distpath", "dist",
+    "--name", "GomokuWorkers", "--distpath", "dist",
     "--workpath", "build/pyinstaller", "--specpath", "build/pyinstaller", "--paths", ".",
     "--collect-submodules", "aiworker",
     "--collect-submodules", "classical_worker",
@@ -42,7 +42,7 @@ $pyinstaller = @(
     "packaging/worker_entry.py"
 )
 & $python @pyinstaller
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller 构建失败" }
+if ($LASTEXITCODE -ne 0) { throw "引擎运行时构建失败" }
 
 Write-Host "[4/4] 裁剪权重 + 组装目录 + 打 zip"
 & $python packaging/export_model.py models/az/run_last.pt dist/run_last.pt

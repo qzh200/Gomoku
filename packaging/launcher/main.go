@@ -1,18 +1,18 @@
-// Command launcher 以解压目录为根，启动 Go 主程序与 Python Worker。
+// Command launcher 以解压目录为根，启动主程序与三个 AI 引擎进程。
 //
 // 布局（由 packaging/build.ps1 生成）：
 //
-//	Gomoku.exe        本启动器
-//	mygo.exe          Go 主程序（API + 桌面 UI）；注意不能与启动器同名（NTFS 不区分大小写）
-//	configs/          引擎注册表
-//	models/az/        AlphaZero 权重
-//	workers/          冻结的 Python Worker 运行时（torch/numpy 已在内）
-//	classical_worker/ 每个 Worker 一个目录，放 .env 参数文件
-//	llm_worker/       └ LLM 引擎
-//	az_worker/        └ AlphaZero 引擎
+//	Gomoku.exe             本启动器，双击入口
+//	GomokuApp.exe          主程序（API + 桌面 UI）；不能与启动器同名（NTFS 不区分大小写）
+//	configs/               引擎注册表
+//	models/az/             AlphaZero 权重
+//	runtime/GomokuWorkers.exe  冻结的引擎运行时（依赖已内置）
+//	classical_worker/      每个引擎一个目录，放 .env 参数文件
+//	llm_worker/            └ LLM 引擎
+//	az_worker/             └ AlphaZero 引擎
 //
-// 没有 workers/workers.exe 时退回到源码模式：用 .venv 或 PATH 上的 Python 跑
-// packaging/worker_entry.py。直接运行 mygo.exe 仍然可用，但不会拉起 Worker。
+// 没有 runtime/GomokuWorkers.exe 时退回源码模式：用 .venv 或 PATH 上的解释器跑
+// packaging/worker_entry.py。直接运行 GomokuApp.exe 仍然可用，但不会拉起引擎。
 package main
 
 import (
@@ -52,9 +52,9 @@ func main() {
 	if err != nil {
 		fatal("定位程序目录失败: %v", err)
 	}
-	app := filepath.Join(root, "mygo.exe")
+	app := filepath.Join(root, "GomokuApp.exe")
 	if _, err := os.Stat(app); err != nil {
-		fatal("找不到 %s，请完整解压发布包再运行", app)
+		fatal("找不到 %s，请完整解压发行包再运行", app)
 	}
 	// 同名会无限自我复制：Windows 路径不分大小写，曾把启动器写成 MyGo.exe
 	// 覆盖掉 mygo.exe，结果每次启动都把自己当主程序拉起。
@@ -73,7 +73,7 @@ func main() {
 	parent.Stdout = os.Stdout
 	parent.Stderr = os.Stderr
 	if err := parent.Start(); err != nil {
-		fatal("启动 mygo.exe 失败: %v", err)
+		fatal("启动 %s 失败: %v", app, err)
 	}
 	if err := waitRuntime(root, started); err != nil {
 		fmt.Fprintln(os.Stderr, "启动器:", err)
@@ -85,7 +85,7 @@ func main() {
 	runtime, isFrozen := workerRuntime(root)
 	var children []*exec.Cmd
 	if runtime == "" {
-		fmt.Fprintln(os.Stderr, "没有可用的 Worker 运行时：既无 workers.exe，也无 Python")
+		fmt.Fprintln(os.Stderr, "没有可用的引擎运行时：既无 runtime/GomokuWorkers.exe，也无解释器")
 	} else {
 		for _, w := range workers {
 			if !isFrozen && w.modules != nil && !hasModules(runtime, w.modules) {
@@ -124,11 +124,11 @@ func waitRuntime(root string, started time.Time) error {
 	return fmt.Errorf("等待 %s 超时，Worker 不会启动（令牌缺失）", path)
 }
 
-// workerRuntime 返回 Worker 解释器：发行包自带的 workers.exe，其次工程 venv，
-// 最后 PATH 上的 python。第二个返回值为 true 表示已冻结全部依赖。
+// workerRuntime 返回引擎进程的可执行文件：发行包自带的 runtime/GomokuWorkers.exe，
+// 其次工程 venv，最后 PATH 上的解释器。第二个返回值为 true 表示依赖已冻结。
 func workerRuntime(root string) (string, bool) {
 	if runtime.GOOS == "windows" {
-		exe := filepath.Join(root, "workers", "workers.exe")
+		exe := filepath.Join(root, "runtime", "GomokuWorkers.exe")
 		if _, err := os.Stat(exe); err == nil {
 			return exe, true
 		}

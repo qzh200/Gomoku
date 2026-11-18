@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-// prefixed 给子进程输出加 [worker] 前缀。
+// prefixed 给引擎进程输出加 [名字] 前缀。
 // 双击启动的窗口程序没有标准输出，此时写到 logs/<name>.log，排障时能拿到原因。
 func prefixed(name string) io.Writer {
 	target := io.Writer(os.Stdout)
