@@ -47,7 +47,7 @@ flowchart LR
 | [04-llm-engine.md](04-llm-engine.md) | 棋形原语、Prompt 结构、输出解析、重试与兜底、推理模型适配 |
 | [05-az-engine.md](05-az-engine.md) | 9 平面特征、bitboard 威胁、网络、官方 PUCT、纯自对弈训练、VCF/VCT、擂台 |
 | [06-desktop-ui.md](06-desktop-ui.md) | UI 分层、绘制几何、交互、版本冲突重试、复盘、主题 |
-| [07-comparison-and-operations.md](07-comparison-and-operations.md) | 引擎对比、评测方法、环境变量矩阵、运行手册、故障排查 |
+| [07-comparison-and-operations.md](07-comparison-and-operations.md) | 引擎对比、评测方法、环境变量矩阵、运行手册、故障排查、发行包 |
 
 ## 全局约定
 

@@ -42,6 +42,7 @@ MyGo 是一个**本地优先**的五子棋桌面应用。Go 负责唯一权威�
 - [使用](#使用)
 - [配置](#配置)
 - [HTTP API](#http-api)
+- [打包发布](#打包发布)
 - [测试](#测试)
 - [项目结构](#项目结构)
 - [技术文档](#技术文档)
@@ -225,6 +226,32 @@ python -m llm_worker
 
 引擎身份永远由令牌解析，服务端不信任请求体里的引擎名。
 
+## 打包发布
+
+一键构建 Windows 发行包（`dist/MyGo/` 目录 + `dist/MyGo-win64.zip`）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging/build.ps1
+```
+
+发行包内包含：`Gomoku.exe`（启动器）、`mygo.exe`（API + 桌面 UI）、
+`workers/`（PyInstaller 冻结的 Python 运行时，已含 CPU 版 PyTorch）、
+`models/az/run_last.pt`（AlphaZero 权重）、`configs/engines.json` 与三个
+Worker 的 `.env`。双击 `Gomoku.exe` 会先起主程序，等 `engines.runtime.json`
+写好令牌后再拉起 Worker，关窗口时统一退出。
+
+| 路径 | 内容 |
+| --- | --- |
+| `packaging/build.ps1` | 四步构建：两个 Go 产物 → PyInstaller → 组装打 zip |
+| `packaging/pack.ps1` | 摆放文件、复制配置模板、压缩 |
+| `packaging/launcher/` | 启动器源码（进程编排、令牌等待、日志前缀） |
+| `packaging/worker_entry.py` | `--worker {classical,llm,az}` 派发到对应 `__main__` |
+| `packaging/export_model.py` | 裁剪训练产物：去掉棋谱 `extra` 与完整训练配置 |
+
+构建环境用单独的 `.venv-pack` 装 **CPU 版** PyTorch：GPU 版 `torch` 有 4.2 GB，
+打出来的包无法分发；AlphaZero 每手 2 秒预算在 CPU 上够用。细节见
+[`packaging/README-构建.md`](packaging/README-构建.md)。
+
 ## 测试
 
 ```sh
@@ -262,6 +289,7 @@ python -m unittest discover -s llm_worker/tests -t .
 ├─ api/openapi.yaml         # 冻结 API 契约
 ├─ configs/                 # 引擎配置示例/运行时文件
 ├─ doc/                     # 中文技术文档
+├─ packaging/               # 发行包：启动器、PyInstaller 入口、构建脚本
 └─ assets/                  # 图标等嵌入资源
 ```
 
@@ -276,7 +304,7 @@ python -m unittest discover -s llm_worker/tests -t .
 | [`doc/04-llm-engine.md`](doc/04-llm-engine.md) | 棋形原语、Prompt、解析、重试、推理模型适配 |
 | [`doc/05-az-engine.md`](doc/05-az-engine.md) | 9 平面特征、bitboard 威胁、网络、PUCT、纯自对弈训练、VCF/VCT、擂台 |
 | [`doc/06-desktop-ui.md`](doc/06-desktop-ui.md) | UI 分层、绘制、交互、复盘、主题 |
-| [`doc/07-comparison-and-operations.md`](doc/07-comparison-and-operations.md) | 引擎对比、评测、环境变量、运行手册、排障 |
+| [`doc/07-comparison-and-operations.md`](doc/07-comparison-and-operations.md) | 引擎对比、评测、环境变量、运行手册、排障、发行包 |
 
 > 英文 README 见 [`README.en.md`](README.en.md)。深入技术文档目前以中文维护。
 

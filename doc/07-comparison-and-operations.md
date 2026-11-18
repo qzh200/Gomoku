@@ -307,6 +307,7 @@ mock_worker/            测试用最小 Worker
 tests/contracts/        Go 契约测试
 api/openapi.yaml        API 契约
 configs/                引擎配置示例/运行时文件
+packaging/              发行包：启动器、PyInstaller 入口、构建/打包脚本
 ```
 
 ## 10. 新增引擎的端到端清单
@@ -320,3 +321,27 @@ configs/                引擎配置示例/运行时文件
 7. 增加 `.env.example`。
 8. 增加单元测试与 Go 契约测试。
 9. 在本文档与 `doc/README.md` 的引擎表中登记。
+
+## 11. 发行包
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging/build.ps1
+```
+
+| 步骤 | 产物 |
+| --- | --- |
+| `go build ./cmd/app` | `dist/mygo.exe` |
+| `go build ./packaging/launcher` | `dist/Gomoku.exe` |
+| `PyInstaller --onedir packaging/worker_entry.py` | `dist/workers/` |
+| `export_model.py` + `pack.ps1` | `dist/MyGo/`、`dist/MyGo-win64.zip` |
+
+要点：
+
+- 打包环境是 `.venv-pack` 里的 **CPU 版** torch；GPU 版 4.2 GB，发行包无法分发。
+- `workers/` 走 `worker_entry.py --worker {classical,llm,az}`，所以用
+  `--collect-submodules` 收集四个包，同时 `--exclude-module` 去掉训练侧代码。
+- `dist/MyGo/` 里的 `configs/engines.json` 用 `engines.example.json` 的内容
+  （令牌留空），主程序启动时随机生成并写 `engines.runtime.json`；启动器等这个文件
+  出现后才拉起 Worker，否则 Worker 拿不到令牌。
+- `models/az/run_last.pt` 是裁剪过的推理权重（`extra` 对局棋谱已删除）。
+

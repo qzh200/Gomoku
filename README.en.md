@@ -42,6 +42,7 @@ MyGo is a **local-first** Gomoku (Five-in-a-Row) desktop application. Go owns th
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [HTTP API](#http-api)
+- [Packaging](#packaging)
 - [Testing](#testing)
 - [Project Layout](#project-layout)
 - [Documentation](#documentation)
@@ -225,6 +226,32 @@ The three credentials are not interchangeable:
 
 Engine identity always comes from the token. The server never trusts an engine name in a request body.
 
+## Packaging
+
+Build the Windows release (a `dist/MyGo/` folder plus `dist/MyGo-win64.zip`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging/build.ps1
+```
+
+The bundle ships `Gomoku.exe` (launcher), `mygo.exe` (API + desktop UI), `workers/`
+(a PyInstaller-frozen Python runtime with CPU PyTorch), `models/az/run_last.pt`,
+`configs/engines.json`, and one `.env` per worker. Double-clicking `Gomoku.exe`
+starts the main program, waits for `engines.runtime.json` to carry the tokens,
+then launches the workers and shuts everything down together.
+
+| Path | Contents |
+| --- | --- |
+| `packaging/build.ps1` | Four steps: two Go binaries → PyInstaller → assemble and zip |
+| `packaging/pack.ps1` | Copy files, seed config templates, compress |
+| `packaging/launcher/` | Launcher source (process lifecycle, token wait, log prefixes) |
+| `packaging/worker_entry.py` | Dispatches `--worker {classical,llm,az}` to the matching `__main__` |
+| `packaging/export_model.py` | Trims training artifacts: drops the `extra` replay and full config |
+
+Builds use a separate `.venv-pack` with **CPU** PyTorch: the GPU wheel is 4.2 GB
+and would make the bundle undeliverable, while a 2 s per-move budget is fine on
+CPU. See [`packaging/README-构建.md`](packaging/README-构建.md).
+
 ## Testing
 
 ```sh
@@ -262,6 +289,7 @@ python -m unittest discover -s llm_worker/tests -t .
 ├─ api/openapi.yaml         # Frozen API contract
 ├─ configs/                 # Engine config examples/runtime file
 ├─ doc/                     # Technical documentation (Chinese)
+├─ packaging/               # Release bundle: launcher, PyInstaller entry, build scripts
 └─ assets/                  # Icons and embedded assets
 ```
 
@@ -276,7 +304,7 @@ python -m unittest discover -s llm_worker/tests -t .
 | [`doc/04-llm-engine.md`](doc/04-llm-engine.md) | Threat primitives, prompt, parsing, retries, reasoning models |
 | [`doc/05-az-engine.md`](doc/05-az-engine.md) | 9 planes, bitboard threats, network, PUCT, pure self-play training, VCF/VCT, arena |
 | [`doc/06-desktop-ui.md`](doc/06-desktop-ui.md) | UI layers, rendering, interaction, replay, themes |
-| [`doc/07-comparison-and-operations.md`](doc/07-comparison-and-operations.md) | Engine comparison, evaluation, env vars, runbook, troubleshooting |
+| [`doc/07-comparison-and-operations.md`](doc/07-comparison-and-operations.md) | Engine comparison, evaluation, env vars, runbook, troubleshooting, release bundle |
 
 > The deep-dive documentation is currently written in Chinese.
 
