@@ -103,7 +103,7 @@ type Board [BoardSize][BoardSize]int // BoardSize = 15
 
 失败（占用/越界）在写棋盘之前返回，因此不会产生半更新。
 
-`Undo` 不反向计算，而是保留 `version` 和 `execution`，重建一个 `NewGame` 后重放剩余着法。这样 `moves`、`LastMove`、`Winner`、`Result` 不可能与棋盘不一致。
+`Undo` 不反向计算，而是重建一个 `NewGame` 后重放剩余着法，再把 `version` 设为原值 +1、恢复 `execution`。这样 `moves`、`LastMove`、`Winner`、`Result` 不可能与棋盘不一致，版本号也始终保持单调递增。
 
 ### 2.3 玩家配置
 
@@ -137,13 +137,15 @@ stateDiagram-v2
   Paused --> Playing: PATCH execution_state=running
   Playing --> Finished: 五连或棋盘填满
   Paused --> Finished: 恢复后落子结束
+  Finished --> Playing: Undo
   Finished --> [*]
 ```
 
 - `paused` 只允许 `ai_vs_ai`。服务端拒绝其他模式的暂停/恢复。
 - 暂停会立即 `InvalidateGame`，让所有 Worker 手中的租约失效。
 - 结束状态不会自动清理；删除棋局要显式 `DELETE`。
-- 悔棋可以作用于已结束的棋局，重建后回到 `playing`（`Undo` 用 `NewGame` 重置状态）。UI 在结束时隐藏悔棋按钮，但服务端并不禁止。
+- 悔棋可以作用于已结束的棋局，重建后回到 `playing`（`Undo` 用 `NewGame` 重置状态）。UI 只在复盘中、AI 对战模式下、或没有着法时隐藏悔棋按钮；服务端对已结束的棋局同样不禁止。
+- 暂停/恢复只校验模式（`ai_vs_ai`）与可选的 `expected_version`，不校验棋局是否已结束；已结束的棋局接受 PATCH 后 `execution_state` 会改变，但不会产生可领取的回合。
 
 ## 3. 应用服务
 
@@ -159,7 +161,7 @@ func (c *Coordinator) WaitChannel() <-chan struct{}
 ```
 
 - 所有用例先拿 `Coordinator` 的互斥锁，再读/写仓储和租约。仓储自身也有一把 `RWMutex`，但业务层不依赖它做跨对象一致性。
-- `Signal` 关闭当前 `notify` 通道并换一个新的；长轮询的 `ClaimService.wait` 监听旧通道，因此任何落子、悔棋、删除、释放租约都会唤醒等待者。
+- `Signal` 关闭当前 `notify` 通道并换一个新的；长轮询的 `ClaimService.wait` 监听旧通道，因此落子、悔棋、暂停/恢复、删除、释放租约都会唤醒等待者。创建棋局不触发 signal，已经在等待的 Worker 要等本轮 `wait` 到期后才会看到新棋局。
 - `pendingTurns(engineID)` 遍历所有棋局，过滤 `playing`、`running`、当前方是 AI 且 `engine_id` 匹配，产出待领取回合。
 
 ### 3.2 GameService
@@ -172,7 +174,7 @@ func (c *Coordinator) WaitChannel() <-chan struct{}
 2. 命中幂等记录且请求哈希一致时直接返回首次结果；哈希不同返回 `IDEMPOTENCY_KEY_REUSED`；
 3. 校验模式、双方配置、注册表可用性；
 4. `game_%03d` 生成 ID，`auth.RandomToken()` 生成 owner token；
-5. 仓储只保存 owner token 的 SHA-256，明文只在本次响应返回一次。
+5. 仓储只保存 owner token 的 SHA-256；首次创建返回明文。同一调用者用相同幂等键重放创建请求时，返回首次保存的结果，其中再次包含同一个 `owner_token`。
 
 `List` / `Get` 会用 `Leases().ActiveFor(game.ID, game.Version)` 填充 `ai_thinking`。它是派生字段：有有效租约即 true，不持久化。
 
@@ -207,6 +209,7 @@ func (c *Coordinator) WaitChannel() <-chan struct{}
 - 引擎禁止悔棋；
 - 没有着法返回 `INVALID_REQUEST`；
 - `expected_version == 0` 表示不校验版本；
+- 暂停中的棋局返回 `GAME_PAUSED`；
 - `human_vs_ai` 下如果最后一手是 AI 的，回退 2 手（回到人类落子前）；否则回退 1 手；
 - 其他模式固定回退 1 手；
 - 成功后 `InvalidateGame`，所有该局租约失效。
@@ -251,10 +254,10 @@ loop:
 | 凭据 | 请求头 | 用途 |
 | --- | --- | --- |
 | 引擎令牌 | `Authorization: Bearer <token>` | Worker 领取回合、续期、释放、提交落子 |
-| 棋局 Owner 令牌 | `X-Game-Owner-Token` | 创建者操作自己的棋局：落子、悔棋、暂停、删除 |
-| 本地客户端令牌 | `X-Local-Client-Token` | UI 创建棋局、跨棋局操作 |
+| 棋局 Owner 令牌 | `X-Game-Owner-Token` | 创建者操作自己的棋局：落子、暂停/恢复、删除 |
+| 本地客户端令牌 | `X-Local-Client-Token` | 只用于 `POST /games`；UI 创建棋局 |
 
-- 令牌只存 SHA-256；`EngineByToken` 用哈希反查引擎。
+- 引擎注册表保留令牌明文（运行时文件与启动日志需要），反查表以 SHA-256 为键；棋局 owner token 在仓储里只存哈希。
 - 引擎名永远来自令牌解析结果，不信任请求体。
 - 静态配置 `configs/engines.json`（默认）可给出固定令牌；缺失令牌时启动时随机生成。
 - 启动后把实际生效配置写到 `configs/engines.runtime.json`（权限 `0600`，目录 `0700`），Worker 从这里读取自己的令牌。
@@ -324,7 +327,7 @@ sequenceDiagram
   Note over Auth: 缺失令牌则随机生成
   Main->>Srv: net.Listen + Serve
   Main->>RT: SaveRuntime(令牌, 本地客户端令牌)
-  Main->>Main: 控制台打印令牌
+  Main->>Main: 控制台打印本地令牌；引擎令牌仅在随机生成时打印
   Main->>UI: NewWindow + StartPolling
   UI->>UI: 每 250ms refresh + Invalidate
 ```

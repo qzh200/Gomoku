@@ -26,7 +26,7 @@
 
 MyGo 是一个**本地优先**的五子棋桌面应用。Go 负责唯一权威的棋局状态、HTTP API、回合租约和原生界面；Python Worker 通过长轮询领取回合、计算落子并提交。三个引擎共享同一套协议，因此可以在同一局中自由对战。
 
-- **规则只有一份**：UI 与 Worker 都调用 Go 领域的 `Game` / `Board` / `Rules`。
+- **权威状态只有一份**：UI 直接调用 Go 领域的 `Game` / `Board` / `Rules`；Worker 收到盘面快照后本地计算，落子仍由服务端规则校验。
 - **引擎可以替换**：传统搜索、LLM、AlphaZero 都只是实现 `choose_move` 的 Worker。
 - **本地即可开玩**：传统引擎与 AlphaZero 推理不依赖外部服务；只有 LLM 需要模型 API。
 - **协议可验证**：`api/openapi.yaml` 是冻结契约，Go 契约测试会启动真实 Python Worker。
@@ -67,7 +67,7 @@ MyGo 是一个**本地优先**的五子棋桌面应用。Go 负责唯一权威�
 | --- | --- | --- | --- | --- |
 | `classical` | 传统搜索 | 6 格窗口棋型评估 + PVS + 置换表 + VCF | 纯 CPU，无外部服务 | 稳定、可复现的战术对局 |
 | `llm` | 大语言模型 | 精确棋形文字 + 0 基坐标 Prompt，解析 JSON 落子 | OpenAI 兼容 API | 可解释的自然语言推理、Prompt 研究 |
-| `az` | AlphaZero | 9 平面残差网络 + PUCT MCTS，纯自对弈训练（官方方法基线） | 本地 PyTorch + 权重 | 学习型局面直觉、长期策略 |
+| `az` | AlphaZero | 9 平面残差网络 + PUCT MCTS，自对弈训练（默认每 5 轮加 8 局传统引擎对局） | 本地 PyTorch + 权重 | 学习型局面直觉、长期策略 |
 
 另外提供 `mock_worker/`，只用于契约测试和链路排查，不参与正式对局。
 
@@ -116,7 +116,7 @@ go build ./...
 go run ./cmd/app
 ```
 
-启动后控制台会打印本地客户端令牌、引擎令牌，并生成 `configs/engines.runtime.json`。桌面窗口会自动打开。
+启动后控制台会打印本地客户端令牌；引擎令牌只在本次随机生成时打印。配置写入 `configs/engines.runtime.json`，桌面窗口自动打开。
 
 ### 2. 准备 Worker
 
@@ -195,8 +195,11 @@ python -m llm_worker
 
 ```json
 {
-  "black": {"type": "ai", "engine_id": "classical", "config": {"depth": 3}},
-  "white": {"type": "ai", "engine_id": "az", "config": {"simulations": 4000}}
+  "mode": "ai_vs_ai",
+  "players": {
+    "black": {"type": "ai", "engine_id": "classical", "config": {"depth": 3}},
+    "white": {"type": "ai", "engine_id": "az", "config": {"simulations": 4000}}
+  }
 }
 ```
 
@@ -235,18 +238,20 @@ powershell -ExecutionPolicy Bypass -File packaging/build.ps1
 ```
 
 发行包内包含：`Gomoku.exe`（启动器）、`GomokuApp.exe`（API + 桌面 UI）、
-`runtime/`（冻结的引擎运行时，已含 CPU 版 PyTorch）、
-`models/az/run_last.pt`（AlphaZero 权重）、`configs/engines.json` 与三个
-Worker 的 `.env`。双击 `Gomoku.exe` 会先起主程序，等 `engines.runtime.json`
-写好令牌后再拉起 Worker（三个 Worker 不弹控制台窗口，输出写 `logs/`），
-关窗口时统一退出。
+`runtime/GomokuWorkers.exe`（冻结的引擎运行时，已含 CPU 版 PyTorch）、
+`models/az/run_last.pt`（AlphaZero 权重）、`configs/engines.json`、`使用说明.md` 与三个
+Worker 的 `.env`（AZ 的权重路径已改为随包的 `models/az/run_last.pt`）。
+
+双击 `Gomoku.exe` 会先起主程序，等 `engines.runtime.json` 写好令牌后再拉起 Worker
+（三个 Worker 不弹控制台窗口，输出写 `logs/`），关窗口时统一退出。启动器最多等 15 秒，
+超时后结束主程序并退出。
 
 | 路径 | 内容 |
 | --- | --- |
 | `packaging/build.ps1` | 四步构建：两个可执行文件 → 引擎运行时 → 组装打 zip |
-| `packaging/pack.ps1` | 摆放文件、复制配置模板、压缩 |
-| `packaging/launcher/` | 启动器源码（进程编排、令牌等待、日志前缀） |
-| `packaging/worker_entry.py` | `--worker {classical,llm,az}` 派发到对应 `__main__` |
+| `packaging/pack.ps1` | 摆放文件、生成注册表、复制 `.env` 模板、压缩 |
+| `packaging/launcher/` | 启动器源码（进程编排、等待运行时配置、日志前缀；仅 Windows） |
+| `packaging/worker_entry.py` | PyInstaller 入口；打包后与源码模式都按 `--worker {classical,llm,az}` 派发到对应 `__main__` |
 | `packaging/export_model.py` | 裁剪训练产物：去掉棋谱 `extra` 与完整训练配置 |
 
 构建环境用单独的 `.venv-pack` 装 **CPU 版** PyTorch：GPU 版 `torch` 有 4.2 GB，
@@ -303,7 +308,7 @@ python -m unittest discover -s llm_worker/tests -t .
 | [`doc/02-worker-protocol.md`](doc/02-worker-protocol.md) | Worker 契约、长轮询、租约、幂等、失败处理 |
 | [`doc/03-classical-engine.md`](doc/03-classical-engine.md) | 窗口棋型、增量评估、威胁表、PVS、VCF |
 | [`doc/04-llm-engine.md`](doc/04-llm-engine.md) | 棋形原语、Prompt、解析、重试、推理模型适配 |
-| [`doc/05-az-engine.md`](doc/05-az-engine.md) | 9 平面特征、bitboard 威胁、网络、PUCT、纯自对弈训练、VCF/VCT、擂台 |
+| [`doc/05-az-engine.md`](doc/05-az-engine.md) | 9 平面特征、bitboard 威胁、网络、PUCT、自对弈训练与传统引擎陪练、VCF/VCT、擂台 |
 | [`doc/06-desktop-ui.md`](doc/06-desktop-ui.md) | UI 分层、绘制、交互、复盘、主题 |
 | [`doc/07-comparison-and-operations.md`](doc/07-comparison-and-operations.md) | 引擎对比、评测、环境变量、运行手册、排障、发行包 |
 

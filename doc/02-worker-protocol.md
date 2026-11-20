@@ -57,14 +57,12 @@ class Engine(Protocol):
 | `MYGO_WORKER_ID` | `<engine_id>-worker-01` | Worker 实例名 |
 | `MYGO_WAIT_SECONDS` | `20` | 长轮询等待秒数 |
 | `MYGO_LEASE_EXTEND_SECONDS` | `120` | 续期时申请的租约长度 |
-| `MYGO_RUNTIME_CONFIG` | `configs/engines.runtime.json` | 令牌文件路径 |
+| `MYGO_RUNTIME_CONFIG` | `configs/engines.runtime.json` | 令牌文件路径；显式设置后只读这一个文件 |
 
 令牌默认顺序：
 
 1. `MYGO_ENGINE_TOKEN`；
-2. `MYGO_RUNTIME_CONFIG` 指定的文件；
-3. 仓库根 `configs/engines.runtime.json`；
-4. 当前目录 `configs/engines.runtime.json`。
+2. `MYGO_RUNTIME_CONFIG`；未设置时才依次尝试仓库根与当前目录的 `configs/engines.runtime.json`。
 
 运行时文件结构：
 
@@ -107,6 +105,8 @@ sequenceDiagram
   end
 ```
 
+`wait_seconds` 由服务端限制在 0–120，越界返回 `400 INVALID_REQUEST`；Worker 侧不做额外钳制。首次领取的租约固定为 60 秒，请求里没有 TTL 字段。
+
 ### 3.2 TurnClaim 字段
 
 ```json
@@ -135,15 +135,15 @@ sequenceDiagram
 
 | 参数 | 值 | 说明 |
 | --- | --- | --- |
-| `DefaultLeaseSeconds` | 60 | 未指定 TTL 时的租约长度 |
+| `DefaultLeaseSeconds` | 60 | 首次领取的租约长度（调用方不能指定 TTL） |
 | `MaxExtendSeconds` | 300 | 单次续期上限 |
 | `MaxLeaseTotalSeconds` | 900 | 从 `StartsAt` 起的累计上限 |
 | `RetryBackoff` | 2s | 主动释放后同一回合的冷却 |
 
 - 同一 `turn_id` 同时最多一个有效租约；`TryAcquire` 在 `LeaseManager` 锁内保证原子性。
 - 过期租约会被下一次 `TryAcquire` / `ActiveFor` 惰性清理，不存在后台扫描线程。
-- 续期时若累计时长超过 900s，返回 `CLAIM_INVALID`。
-- `Release` 删除租约并写入 `retryAt = now + 2s`。
+- 续期长度必须在 1–300s 之间；从 `StartsAt` 起的累计时长超过 900s 返回 `CLAIM_INVALID`。默认每次续期 120s，约 7 次后触及累计上限。
+- `Release` 删除租约并写入 `retryAt = now + 2s`；已过期但尚未被清理的租约同样可以直接释放并返回 `204`。
 - 落子、悔棋、暂停、删除棋局都会让相关租约失效。
 
 ### 3.4 Worker 主循环
@@ -170,18 +170,18 @@ while True:
 2. 进入 `LeaseKeeper` 上下文，后台线程定期 `renew`。
 3. 调用 `engine.choose_move`。引擎抛异常时先 `release(claim_id)`，再把异常抛给主循环。
 4. 打印落子并 `submit_move`，带新的 UUID `Idempotency-Key`。
-5. `201` 成功；`409` 视为回合已过期，丢弃结果并返回 `False`；其他状态抛 `WorkerError`。
+5. `201` 成功；任何 `409` 都视为本回合作废，丢弃结果并返回 `False`；其他状态抛 `WorkerError`。`409` 分支不释放租约，因此同一回合要等租约过期（默认 60s）后才能重新领取。
 
-注意 `LeaseKeeper` 的续期失败会直接退出后台线程，不打断正在计算的引擎；如果计算时间超过租约，提交时会被服务端以 `CLAIM_EXPIRED` 拒绝。
+注意 `LeaseKeeper` 的续期失败会直接退出后台线程，不打断正在计算的引擎；如果计算时间超过租约，提交时会被服务端以 `CLAIM_EXPIRED` 拒绝。续期长度还会受服务端 1–300s 与累计 900s 的限制，超出同样按续期失败处理。
 
 ## 4. 失败语义
 
 | 现象 | 服务端响应 | Worker 行为 |
 | --- | --- | --- |
 | 没有可领取回合 | `204` | `sleep(2.0)` 后继续轮询 |
-| 落子时版本已变 | `409 VERSION_CONFLICT` | 丢弃该手，重新领取 |
+| 落子时版本已变 | `409 VERSION_CONFLICT` | 丢弃该手，不释放租约；租约到期后重领 |
 | 租约过期/失效 | `409 CLAIM_EXPIRED` / `CLAIM_INVALID` | 丢弃该手，重新领取 |
-| 落点被占 | `409 POSITION_OCCUPIED` | 视为引擎缺陷；丢弃并重试（会持续失败） |
+| 落点被占 | `409 POSITION_OCCUPIED` | 视为引擎缺陷；丢弃该手；租约到期前重领会得到 `204` |
 | 引擎内部异常 | 无（本地） | 主动释放租约；退避后重领 |
 | 服务不可达 | 连接错误 | 失败计数递增，退避上限 60s |
 | 服务端 5xx | `500` | 抛 `WorkerError`，按失败处理 |
@@ -197,7 +197,7 @@ while True:
 - 相同键 + 相同请求体 → 返回首次保存的 `MoveResult`；
 - 相同键 + 不同请求体 → `409 IDEMPOTENCY_KEY_REUSED`。
 
-Worker 每手生成新的 UUID。网络超时重试时**复用同一个 key** 才不会重复落子；当前 `protocol.py` 在 `submit_move` 调用点生成 key，若未来加入自动重试，应把 key 提升到 `play_turn` 作用域。
+Worker 每手生成新的 UUID。网络超时重试时**复用同一个 key** 才不会重复落子；当前 `protocol.py` 在 `submit_move` 调用点生成 key，因此同一手重新领取后会产生新 key。幂等记录的请求哈希包含 `claim_id`，同一回合重新领取后再用旧 key 会得到 `409 IDEMPOTENCY_KEY_REUSED`。
 
 `POST /games` 的幂等键可选，作用域按 owner token 哈希区分。
 

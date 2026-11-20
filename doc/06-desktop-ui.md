@@ -10,7 +10,8 @@ UI 是 MyGo 进程内的原生界面，使用 `github.com/egoist/mygo` 的窗口
 | `ui/view.go` | 页面结构：工具栏、侧栏、棋盘区、落子记录 |
 | `ui/board.go` | 棋盘几何、绘制、鼠标命中、最后一手/胜利线/悬停子 |
 | `ui/style.go` | 调色板、面板、按钮、分段控件、标签、提示条 |
-| `ui/*_test.go` | 交互、撤销、快照、集成测试 |
+| `ui/*_test.go` | 交互、撤销、渲染快照 |
+| `tests/contracts/ui_integration_test.go` | UI 动作与真实服务/Worker 的集成 |
 
 ## 2. 线程与刷新模型
 
@@ -53,7 +54,7 @@ sequenceDiagram
 | `replayGames` | 最近棋局列表（最多 12 局） |
 | `reviewing` / `reviewGame` / `reviewMoves` / `reviewStep` | 复盘模式 |
 
-`engineInfo` 在 `New` 时从 `auth.Registry.Engines()` 拷贝，UI 只显示名称和可用性。
+`engineInfo` 在 `New` 时从 `auth.Registry.Engines()` 拷贝。UI 只显示名称；结构里的 `Enabled` 当前不参与渲染或选择。
 
 ## 4. 页面结构
 
@@ -74,8 +75,8 @@ Column
 
 棋盘尺寸 `boardSizeFor(width, height)`：
 
-- 横向可用 = 总宽 - 侧栏 - 历史栏 - 间距 - padding；
-- 纵向可用 = 总高 - 工具栏 - padding；
+- 横向可用 = 总宽 - 侧栏 - 历史栏 - 2×面板间距 - 2×页面 padding - 2×棋盘 padding；
+- 纵向可用 = 总高 - 工具栏 - 2×页面 padding - 2×棋盘 padding；
 - 取较小值，限制在 `[420, 1000]`；
 - 窗口过小时允许低于 420，以免溢出。
 
@@ -111,7 +112,7 @@ y(row) = rect.Y + 22 + row*cell
 5. 胜利线（若已结束且有 winner）；
 6. 棋子：先阴影，再径向渐变，白子额外描边；
 7. 最后一手标记（ accent 圆点，半径 0.19 cell）；
-8. 悬停幽灵子（仅当该格为空且未只读）。
+8. 悬停幽灵子（该格为空时绘制；`ReadOnly` 只阻止输入，不参与这里的判断）。
 
 命中测试 `cellAt`：
 
@@ -151,7 +152,7 @@ row = round((y - originY) / cell)
 5. 成功则更新 `game`/`status`/提示条；
 6. `refresh()`。
 
-重试一次是必要的：AI 可能刚好在轮询间隔内落子，用户的点击不该无声失败。超过一次仍冲突则显示错误。
+AI 可能在用户点击与请求到达之间完成落子，因此冲突后刷新一次再用新版本提交；第二次仍冲突则显示错误，不做无限重试。
 
 ### 6.3 悔棋
 
@@ -178,7 +179,7 @@ row = round((y - originY) / cell)
 - `replayPosition` 用 `NewGame` + 重放前 `step` 手得到只读棋盘；当 `step == len(moves)` 时恢复真实 `Status/Result/Execution/Winner`。
 - 复盘时：
   - 棋盘 `ReadOnly`；
-  - 侧栏显示“回溯 · 第 x / y 手”；
+  - 顶部工具栏的状态 chip 显示“回溯 · 第 x / y 手”；
   - 历史面板顶部出现上一手/下一手；
   - 点击历史行跳转到该手之后。
 - 退出复盘清空 `reviewing/reviewGame/reviewMoves/reviewStep`。
@@ -212,13 +213,13 @@ row = round((y - originY) / cell)
 
 | 文件 | 覆盖 |
 | --- | --- |
-| `ui/ui_test.go` | 模式/引擎选择、状态文案、棋盘尺寸 |
-| `ui/interaction_test.go` | 点击、悬停、命中测试 |
-| `ui/undo_test.go` | 悔棋按钮可见性、版本冲突重试 |
-| `ui/snapshot_test.go` | GPU 快照对比 |
+| `ui/ui_test.go` | 界面绘制、落子经应用服务、坐标命中、悬停幽灵子 |
+| `ui/interaction_test.go` | 点击与边界、悬停、AI 选边/选引擎、开始对局、按钮、历史、复盘 |
+| `ui/undo_test.go` | 悔棋、未结束旧局记录、放弃空局、复盘后开新局 |
+| `ui/snapshot_test.go` | 空盘/对局/暗色/小窗口/终局五张 PNG 快照，写入临时目录 |
 | `tests/contracts/ui_integration_test.go` | UI 动作与真实服务/Worker 的集成 |
 
-快照测试需要可用的图形环境；无 GPU 的 CI 应跳过。交互/撤销测试是纯逻辑，优先保留。
+快照测试只负责渲染并写文件，不做像素对比。
 
 ## 10. 扩展点
 

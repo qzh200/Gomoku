@@ -332,16 +332,18 @@ powershell -ExecutionPolicy Bypass -File packaging/build.ps1
 | --- | --- |
 | `go build ./cmd/app` | `dist/GomokuApp.exe` |
 | `go build ./packaging/launcher` | `dist/Gomoku.exe` |
-| `PyInstaller --onedir packaging/worker_entry.py` | `dist/GomokuWorkers/` |
+| `PyInstaller --onedir packaging/worker_entry.py` | `dist/GomokuWorkers/`（包内为 `runtime/GomokuWorkers.exe`） |
 | `export_model.py` + `pack.ps1` | `dist/Gomoku/`、`dist/Gomoku-win64.zip` |
 
 要点：
 
 - 打包环境是 `.venv-pack` 里的 **CPU 版** torch；GPU 版 4.2 GB，发行包无法分发。
-- `runtime/` 走 `worker_entry.py --worker {classical,llm,az}`，所以用
+- 包内 `runtime/GomokuWorkers.exe` 与源码模式共用 `worker_entry.py --worker {classical,llm,az}`，所以用
   `--collect-submodules` 收集四个包，同时 `--exclude-module` 去掉训练侧代码。
-- `dist/Gomoku/` 里的 `configs/engines.json` 用 `engines.example.json` 的内容
-  （令牌留空），主程序启动时随机生成并写 `engines.runtime.json`；启动器等这个文件
-  出现后才拉起 Worker，否则 Worker 拿不到令牌。
+- `dist/Gomoku/` 里的 `configs/engines.json` 由 `pack.ps1` 内联生成，令牌留空，主程序
+  启动时随机生成并写 `engines.runtime.json`；启动器等这个文件出现后才拉起 Worker，
+  最多等 15 秒，超时则结束主程序并退出。
+- 发行包把 `packaging/README-发行版.md` 复制为 `使用说明.md`，并把 `az_worker/.env`
+  的 `AZ_MODEL_PATH` 改写为 `models/az/run_last.pt`。
 - `models/az/run_last.pt` 是裁剪过的推理权重（`extra` 对局棋谱已删除）。
 

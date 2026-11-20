@@ -1,7 +1,8 @@
 # AlphaZero 引擎（az_worker）
 
 `az_worker` 用一个策略/价值网络加 PUCT 搜索下五子棋，训练方式沿用 DeepMind 2018 的
-AlphaZero：纯自对弈、不使用教师棋谱、不设晋级门槛，最新网络持续产生训练数据。
+AlphaZero：以自对弈为主、不使用教师棋谱、不设晋级门槛，最新网络持续产生训练数据；
+从零训练时每 5 轮加入 8 局传统引擎对局，作为补充样本。
 能自由调整的只有硬件适配项（网络宽度、批大小、学习率、训练步数、搜索预算），
 以及五子棋本身要求的适配（15×15 棋盘、合法点掩码、双方威胁平面）。
 
@@ -77,7 +78,7 @@ flowchart LR
 - 每轮 `max(32, workers)` 局，避免早期用少量样本反复训练。
 - 学习率在 15,000 / 21,250 步处衰减；模拟数按进度走 400 / 800 / 1600。
 - 默认半径 2、八对称增强，网络为 64 通道 × 6 块。
-- 检查点记录 `training_version=2` 与完整命令行配置。
+- 每轮结束写完整检查点（`training_version`、命令行配置、优化器动量）；每轮开始前另写一份只含 `step`/`games` 的轻量检查点，用于中断后定位进度。
 
 ### 公共战术规则
 
@@ -214,10 +215,11 @@ U(s,a) = c(s) * P(s,a) * sqrt(max(N(s),1)) / (1 + N(s,a) + virtual_loss)
 
 - 基础候选来自半径（半径为 0 时是全盘空点）；
 - 一旦存在己方成五点、对方成五点或己方活四点，候选就替换为这些战术点；
-- 对方已有活四点时，候选保留所有能消除该活四点的走法，以及能形成反击的走法。
+- 以上都不成立、但对方有成活四点的点时（即对方已有活三），候选保留所有能阻止对方做出活四的走法，
+  以及己方能立即成五的反击；找不到防守时保留原候选，不伪造安全解。
 
-先验由网络策略与战术权重混合而成：九成来自网络，一成来自战术权重
-（己方能成活三的点权重 3 倍，对方能成活三的点权重 1 倍，其余为 1）。这一层先验地板
+先验由网络策略与战术权重混合而成：九成来自网络，一成来自战术权重。战术权重以 1 为底，
+己方能成活三的点再加 3（合计 4），对方能成活三的点再加 1（合计 2），其余为 1；混合后重新归一化。这一层先验地板
 保证网络判断失准时，好棋仍然排在前面，但它不会把启发式变成必胜。
 
 子节点还会被直接判终局，不用再搜：己方落子即成五记为输；对方成五点没有被这一手
@@ -257,7 +259,8 @@ U(s,a) = c(s) * P(s,a) * sqrt(max(N(s),1)) / (1 + N(s,a) + virtual_loss)
 时间预算是**每手总预算**，解算器与搜索从中分配：每个解算器最多拿剩余时间的 40%，
 搜索拿到剩下的部分，且不低于 0.05 秒。
 
-宿主按 2 秒/手计时，VCF/VCT 用掉的时间会从搜索预算里扣，总时长不会超出租约。
+宿主按 2 秒/手计时，VCF/VCT 用掉的时间会从搜索预算里扣。搜索预算有不低于 0.05 秒的下限，
+且截止时间在每次模拟结束后才检查，因此单手实际耗时为预算与 0.05 秒的较大者，再加最后一次模拟的时间。
 `AZ_SIMULATIONS` 远大于实际能跑的次数（默认 100,000），让墙钟时间成为真正的限制。
 
 ## 8. 训练
@@ -267,7 +270,7 @@ U(s,a) = c(s) * P(s,a) * sqrt(max(N(s),1)) / (1 + N(s,a) + virtual_loss)
 `SelfPlay.play_game`：
 
 - 黑先。每一手先问解算器（`PlaySolver`）：己方成五或堵对方成五点；
-  否则 VCF（默认 0.05 秒）找强制胜；再否则只在己方有活三或活四时才跑 VCT
+  否则 VCF（默认 0.05 秒）找强制胜；再否则只在己方棋形能做出活四或活三时才跑 VCT
   （默认 0.05 秒）。解算器命中就跳过 MCTS，这一手的策略目标记成 one-hot，
   价值目标仍是终局结果。
 - 没有强制胜时按常规流程 `search(add_noise=True)`，前 12 手 τ=1 采样、之后 τ=0。
@@ -292,7 +295,7 @@ U(s,a) = c(s) * P(s,a) * sqrt(max(N(s),1)) / (1 + N(s,a) + virtual_loss)
 容量满时按时间顺序丢弃最旧的样本（一次张量搬移完成，丢弃数量等于超出部分；
 单次写入超过整个容量时只保留最后一段）。`--augment` 开启八对称增强
 （`gather` + 置换表），默认开启。`--buffer-file` 配合 `--resume` 把回放池与已完成
-步数一起落盘，中断只丢当前一轮。
+步数一起落盘，中断只丢当前一轮；只给 `--resume` 而没有 `--buffer-file` 时不会恢复进度，训练从第 0 步开始。
 
 ### 8.3 训练循环
 
@@ -337,7 +340,7 @@ U(s,a) = c(s) * P(s,a) * sqrt(max(N(s),1)) / (1 + N(s,a) + virtual_loss)
 | `--simulations` | 无 | 固定模拟数；不给则按进度 400/800/1600 |
 | `--search-batch` | 32 | MCTS 叶批大小 |
 | `--candidate-radius` | 2 | 基础候选半径；强制战术覆盖候选，0 为全盘 |
-| `--workers` | auto | 并行自对弈进程数；auto 按空闲显存与 CPU 核数推导 |
+| `--workers` | auto | 并行自对弈进程数；`--workers 1` 表示不进进程池、在主进程自对弈。auto 的算法见下 |
 | `--worker-device` | auto | `auto`/`cuda`/`cpu`/`shared`（`shared` = 所有进程共享一个 GPU 推理服务） |
 | `--temperature-moves` | 12 | 前多少手温度采样 |
 | `--augment` / `--no-augment` | 开 | 八对称增强 |
@@ -359,8 +362,8 @@ U(s,a) = c(s) * P(s,a) * sqrt(max(N(s),1)) / (1 + N(s,a) + virtual_loss)
 ### 8.6 性能参考
 
 RTX 4060 Laptop（16 核 32 线程，8 GB 显存）、6×64 网络、批 256、CUDA bf16。
-这组数字来自模拟数还是 128/256/400、每轮 10 局的旧预设，量化的是单步开销与并行
-上限，不是当前默认档位的整轮耗时：
+这组测量使用 128/256/400 模拟、每轮 10 局的配置，量化的是单步开销与并行上限，
+不是默认档位的整轮耗时：
 
 | 项目 | 参考值 |
 | --- | --- |
@@ -385,6 +388,14 @@ GPU 才满载，而梯度只占总时长的一小部分。因此吞吐参数只�
 CUDA 上下文，进程数不再受显存限制，请求按批合并后转发到 GPU。显存吃紧或需要
 更多自对弈进程时用它；默认的每进程独立推理更简单，延迟也更低。
 
+`--workers auto` 按推理方式取不同公式：
+
+| 推理方式 | 自动进程数 |
+| --- | --- |
+| 每进程独立、`--worker-device cuda` | `min(CPU 核数 // 2, (空闲显存 - 768MiB) // 256MiB)` |
+| 每进程独立、`--worker-device cpu` | `min(CPU 核数 // 2, 8)` |
+| `--worker-device shared` | `max(2, CPU 核数 * 3 // 4)` |
+
 ### 8.7 监控与产物
 
 | 通道 | 位置 | 内容 |
@@ -392,7 +403,7 @@ CUDA 上下文，进程数不再受显存限制，请求按批合并后转发到
 | tqdm | 终端 | 每轮一个步数进度条（含吞吐与剩余时间），外加总轮数进度条 |
 | CSV | `<model>.log` | `time,iteration,step,learning_rate,simulations,games,total_games,wins,losses,draws,plies,buffer,policy_loss,value_loss,steps_per_second,seconds,eval_winrate` |
 | TensorBoard | 权重同目录的 `tensorboard/<权重名>/` | `train/{loss,policy_loss,value_loss,learning_rate}`、`selfplay/{plies,simulations,games_total}`、`replay/buffer`、`time/{iteration_seconds,steps_per_second}`、`classical_train/{games,samples}`、`eval/{winrate,games}` |
-| 检查点 | `<model>.pt` | 权重 + `meta`（`step`、`iteration`、`games`、`lr`、`simulations`、`total_steps`）+ 优化器状态（SGD 动量） |
+| 检查点 | `<model>.pt` | 轮末完整写入：权重 + `meta`（`step`、`iteration`、`games`、`lr`、`simulations`、`total_steps`、`training_version`、命令行配置）+ 优化器状态（SGD 动量）。轮前轻量写入只含 `step` 与 `games` |
 
 ```sh
 .venv/Scripts/tensorboard.exe --logdir models/az/tensorboard --port 6006
@@ -402,7 +413,8 @@ CUDA 上下文，进程数不再受显存限制，请求按批合并后转发到
 棋力探针默认每 50 轮跟传统引擎（d2 / 0.05 秒）打 8 局，候选使用 512 模拟 +
 VCF/VCT 各 0.1 秒，胜率写进 `eval/winrate`，耗时随局面变化。这是粗粒度的趋势线，
 正式比较棋力用 `az_worker.arena`（≥40 局、2 秒/手），`--eval-every 0` 可关闭。
-续训会读回优化器动量、已完成步数与自对弈局数，曲线不会因为重启而跳变。
+使用 `--resume --buffer-file` 且权重文件存在时，续训读回已完成步数、自对弈局数与优化器动量。
+若中断发生在轮前轻量检查点之后、轮末完整检查点之前，续训只恢复步数与局数，动量会重新初始化。
 
 ## 9. VCF / VCT
 

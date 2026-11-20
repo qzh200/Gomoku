@@ -26,7 +26,7 @@ Gomoku · AlphaZero · MCTS · PVS · VCF · LLM · Go · Python · Desktop
 
 MyGo is a **local-first** Gomoku (Five-in-a-Row) desktop application. Go owns the single authoritative game state, the HTTP API, turn leases and the native UI. Python workers long-poll for turns, compute a move and submit it back. All three engines speak the same protocol, so any two of them can play each other in one game.
 
-- **One rules implementation**: the UI and every worker go through the same Go `Game` / `Board` / `Rules`.
+- **One authoritative state**: the UI uses the Go `Game` / `Board` / `Rules` directly; workers compute on a board snapshot and every submitted move is checked by the server rules.
 - **Replaceable engines**: classical search, an LLM and AlphaZero are all just workers implementing `choose_move`.
 - **Playable offline**: the classical engine and AlphaZero inference need no external service; only the LLM calls a model API.
 - **Verifiable contract**: `api/openapi.yaml` is the frozen API contract, and Go contract tests spawn the real Python workers.
@@ -67,7 +67,7 @@ MyGo is a **local-first** Gomoku (Five-in-a-Row) desktop application. Go owns th
 | --- | --- | --- | --- | --- |
 | `classical` | Classical search | 6-cell window patterns + PVS + transposition table + VCF | CPU only, no external service | Stable, reproducible tactical play |
 | `llm` | Large language model | Exact threat text + 0-based coordinate prompt, JSON move parsing | OpenAI-compatible API | Explainable natural-language reasoning, prompt research |
-| `az` | AlphaZero | 9-plane residual network + PUCT MCTS, pure self-play training (official-method baseline) | Local PyTorch + weights | Learned positional intuition, long-term strategy |
+| `az` | AlphaZero | 9-plane residual network + PUCT MCTS, self-play training (default: 8 classical games every 5 iterations) | Local PyTorch + weights | Learned positional intuition, long-term strategy |
 
 There is also `mock_worker/`, used only for contract tests and link diagnostics; it is not meant for real games.
 
@@ -116,7 +116,7 @@ go build ./...
 go run ./cmd/app
 ```
 
-MyGo prints the local client token and engine tokens, writes `configs/engines.runtime.json`, and opens the desktop window.
+MyGo prints the local client token (engine tokens only when generated this run), writes `configs/engines.runtime.json`, and opens the desktop window.
 
 ### 2. Prepare the workers
 
@@ -195,8 +195,11 @@ Per-game overrides are passed through `players.<side>.config` when creating a ga
 
 ```json
 {
-  "black": {"type": "ai", "engine_id": "classical", "config": {"depth": 3}},
-  "white": {"type": "ai", "engine_id": "az", "config": {"simulations": 4000}}
+  "mode": "ai_vs_ai",
+  "players": {
+    "black": {"type": "ai", "engine_id": "classical", "config": {"depth": 3}},
+    "white": {"type": "ai", "engine_id": "az", "config": {"simulations": 4000}}
+  }
 }
 ```
 
@@ -234,7 +237,7 @@ Build the Windows release (a `dist/Gomoku/` folder plus `dist/Gomoku-win64.zip`)
 powershell -ExecutionPolicy Bypass -File packaging/build.ps1
 ```
 
-The bundle ships `Gomoku.exe` (launcher), `GomokuApp.exe` (API + desktop UI), `runtime/`
+The bundle ships `Gomoku.exe` (launcher), `GomokuApp.exe` (API + desktop UI), `runtime/GomokuWorkers.exe`
 (a frozen engine runtime with CPU PyTorch), `models/az/run_last.pt`,
 `configs/engines.json`, and one `.env` per worker. Double-clicking `Gomoku.exe`
 starts the main program, waits for `engines.runtime.json` to carry the tokens,
@@ -244,9 +247,9 @@ and shuts everything down together.
 | Path | Contents |
 | --- | --- |
 | `packaging/build.ps1` | Four steps: two Go binaries → PyInstaller → assemble and zip |
-| `packaging/pack.ps1` | Copy files, seed config templates, compress |
-| `packaging/launcher/` | Launcher source (process lifecycle, token wait, log prefixes) |
-| `packaging/worker_entry.py` | Dispatches `--worker {classical,llm,az}` to the matching `__main__` |
+| `packaging/pack.ps1` | Copy files, generate the registry, seed `.env` templates, compress |
+| `packaging/launcher/` | Launcher source (process lifecycle, runtime-config wait, log prefixes; Windows only) |
+| `packaging/worker_entry.py` | PyInstaller entry; both the frozen runtime and source mode dispatch `--worker {classical,llm,az}` to the matching `__main__` |
 | `packaging/export_model.py` | Trims training artifacts: drops the `extra` replay and full config |
 
 Builds use a separate `.venv-pack` with **CPU** PyTorch: the GPU wheel is 4.2 GB
@@ -303,7 +306,7 @@ python -m unittest discover -s llm_worker/tests -t .
 | [`doc/02-worker-protocol.md`](doc/02-worker-protocol.md) | Worker contract, long polling, leases, idempotency, failures |
 | [`doc/03-classical-engine.md`](doc/03-classical-engine.md) | Window patterns, incremental evaluation, threats, PVS, VCF |
 | [`doc/04-llm-engine.md`](doc/04-llm-engine.md) | Threat primitives, prompt, parsing, retries, reasoning models |
-| [`doc/05-az-engine.md`](doc/05-az-engine.md) | 9 planes, bitboard threats, network, PUCT, pure self-play training, VCF/VCT, arena |
+| [`doc/05-az-engine.md`](doc/05-az-engine.md) | 9 planes, bitboard threats, network, PUCT, self-play with classical sparring games, VCF/VCT, arena |
 | [`doc/06-desktop-ui.md`](doc/06-desktop-ui.md) | UI layers, rendering, interaction, replay, themes |
 | [`doc/07-comparison-and-operations.md`](doc/07-comparison-and-operations.md) | Engine comparison, evaluation, env vars, runbook, troubleshooting, release bundle |
 

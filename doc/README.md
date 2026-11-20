@@ -4,7 +4,7 @@
 
 ## 系统全貌
 
-MyGo 是一个单进程桌面应用：Go 负责棋局权威状态、HTTP API、租约调度和原生界面，Python 只负责在 Worker 里计算落子。UI 与 Python Worker 共用同一套业务规则，棋子颜色、手数、胜负判定不会出现两份实现。
+MyGo 是一个单进程桌面应用：Go 负责棋局权威状态、HTTP API、租约调度和原生界面，Python 只负责在 Worker 里计算落子。UI 直接调用 Go 领域对象；Python Worker 各自实现本地棋盘与棋形判断，算出的落子必须通过服务端规则校验才能进入棋局。
 
 ```mermaid
 flowchart LR
@@ -33,7 +33,7 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | 传统引擎 | `classical_worker/` | 6 格窗口棋型评估 + PVS + 置换表 + VCF | 否 | `classical` |
 | LLM 引擎 | `llm_worker/` | 把精确棋形与坐标写进 Prompt，解析模型返回的 JSON | 是，OpenAI 兼容接口 | `llm` |
-| AlphaZero 引擎 | `az_worker/` | 9 平面残差网络 + PUCT MCTS，纯自对弈训练 | 否（推理本地） | `az` |
+| AlphaZero 引擎 | `az_worker/` | 9 平面残差网络 + PUCT MCTS，自对弈训练（默认每 5 轮加 8 局传统引擎对局） | 否（推理本地） | `az` |
 
 另有 `mock_worker/`，只用于契约测试和链路排查，不参与实际对局。
 
@@ -45,7 +45,7 @@ flowchart LR
 | [02-worker-protocol.md](02-worker-protocol.md) | Worker 契约、长轮询、租约、幂等、配置与令牌解析、失败处理 |
 | [03-classical-engine.md](03-classical-engine.md) | 窗口棋型、增量评估、威胁表、PVS、置换表、VCF、参数与基准 |
 | [04-llm-engine.md](04-llm-engine.md) | 棋形原语、Prompt 结构、输出解析、重试与兜底、推理模型适配 |
-| [05-az-engine.md](05-az-engine.md) | 9 平面特征、bitboard 威胁、网络、官方 PUCT、纯自对弈训练、VCF/VCT、擂台 |
+| [05-az-engine.md](05-az-engine.md) | 9 平面特征、bitboard 威胁、网络、官方 PUCT、自对弈训练与传统引擎陪练、VCF/VCT、擂台 |
 | [06-desktop-ui.md](06-desktop-ui.md) | UI 分层、绘制几何、交互、版本冲突重试、复盘、主题 |
 | [07-comparison-and-operations.md](07-comparison-and-operations.md) | 引擎对比、评测方法、环境变量矩阵、运行手册、故障排查、发行包 |
 
@@ -66,7 +66,13 @@ GOPROXY=off go build ./...
 go run ./cmd/app
 ```
 
-启动后控制台会打印本地客户端令牌、各引擎令牌，并写入 `configs/engines.runtime.json`。随后启动需要的 Worker：
+启动后控制台会打印本地客户端令牌；引擎令牌只在本次随机生成时打印。配置写入 `configs/engines.runtime.json`。随后准备参数文件并启动需要的 Worker：
+
+```sh
+cp classical_worker/.env.example classical_worker/.env
+cp az_worker/.env.example az_worker/.env
+cp llm_worker/.env.example llm_worker/.env   # 填 OPENAI_API_KEY
+```
 
 ```sh
 python -m classical_worker
@@ -74,7 +80,7 @@ python -m llm_worker
 .venv/Scripts/python.exe -m az_worker
 ```
 
-注意先启动 MyGo，再启动 Worker：运行时配置里的令牌在 MyGo 每次启动时重新生成。
+注意先启动 MyGo，再启动 Worker：缺失的令牌在 MyGo 启动时随机生成并写入运行时配置，静态配置中的固定令牌原样保留。
 
 ### 测试
 
